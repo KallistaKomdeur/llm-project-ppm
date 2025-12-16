@@ -1,63 +1,43 @@
 ### IMPORTS
-import random
-import argparse
 from pathlib import Path
 from utils.send_query import send_query
 from utils.preprocessing import preprocess
+from utils.io_utils import get_input
 import pandas as pd
-
-### CONSTANTS
-SEED = 42
-BASE_DIR = Path(__file__).resolve().parent
-
-### PRE-CONFIGURATION
-random.seed(SEED) 
+import json
+from typing import Dict, Any
 
 ### HELPER FUNCTIONS
-def get_input():
-    parser = argparse.ArgumentParser()
-    # TODO Add default value
-    parser.add_argument("log_name", type=str)
-    parser.add_argument("provider", type=str)
-    parser.add_argument("--model_name", type=str, default = "2.5-flash")
-    parser.add_argument("--encoding", type=str, default = "seq")
-    args = parser.parse_args()
+def load_or_preprocess(log_name: str, processed_dir: str = "logs/processed", raw_dir: str = "logs/raw") -> Dict[str, Any]:
+    """
+    Loads preprocessed JSON if exists, otherwise reads raw CSV and preprocesses it.
+    Automatically saves the JSON after preprocessing.
+    """
 
-    log_name = args.log_name
-    provider = args.provider
-    model_name = args.model_name
-    encoding = args.encoding
+    processed_path = Path(processed_dir) / f"{log_name}_processed.json"
+    raw_path = Path(raw_dir) / f"{log_name}.csv"
 
-    return log_name, provider, model_name, encoding
-
-### MAIN
-def main():
-    log_name, provider, model_name, encoding = get_input()
-
-    log_raw_dir = BASE_DIR / "logs/raw"
-    log_processed_dir = BASE_DIR / "logs/processed"
-    log_raw_dir.mkdir(parents=True, exist_ok=True)
-    log_processed_dir.mkdir(parents=True, exist_ok=True)
-
-    log_raw = log_raw_dir / f"{log_name}.csv"
-    log_processed = log_processed_dir / f"{log_name}_preprocessed.csv"
-
-    if not log_raw.exists():
-        raise FileNotFoundError(f"Raw log not found: {log_name}")
-
-    if log_processed.exists():
-        print(f"Loading preprocessed log: {log_processed}")
-        df = pd.read_csv(str(log_processed))
+    # Check whether either the processed path or raw path exist
+    if processed_path.exists():
+        print(f"Loading preprocessed log from {processed_path}")
+        with open(processed_path, "r") as f:
+            return json.load(f)
+    elif raw_path.exists():
+        print(f"Processing raw log from {raw_path}")
+        df = pd.read_csv(raw_path)
+        traces = preprocess(df)
+        processed_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(processed_path, "w") as f:
+            json.dump(traces, f, indent=2)
+        print(f"Saved preprocessed log to {processed_path}")
+        return traces
     else:
-        print(f"Preprocessed log not found, preprocessing {log_name}.")
-        df = preprocess(log_raw)
-        df.to_csv(log_processed, index=False)
-        print(f"Saved preprocessed log: {log_processed}")
-    
-    prompt = "Hi! Can you tell me who you are?"
-    
-    #response = send_query(provider, model_name, prompt)
-    #print(response)
+        raise FileNotFoundError(f"Neither processed nor raw log found for {log_name}")
 
 if __name__ == "__main__":
-    main()
+    log_name, provider, model_name, encoding = get_input()
+    result = load_or_preprocess(log_name)
+    print(result)
+    #prompt = "Hi! Can you tell me who you are?"
+    #response = send_query(provider, model_name, prompt)
+    #print(response)
