@@ -42,7 +42,6 @@ def load_or_preprocess(log_name: str, max_test_events: int = 5) -> dict:
         json.dump(test_traces, f, indent=2)
 
     print(f"Saved preprocessed train/test logs to {log_dir}")
-    return {"train": train_traces, "test": test_traces}
 
 def preprocess_trace(trace: pd.DataFrame, case_col: str, activity_col: str, resource_col: str, time_col: str, truncate: bool = False, max_events: int = None) -> Dict[str, Any]:
     trace = trace.reset_index(drop=True)

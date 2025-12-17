@@ -2,7 +2,7 @@ import json
 import random
 from pathlib import Path
 
-def fill_prompt(log_name: str, examples_count: int = 5) -> str:
+def fill_prompt(log_name: str, features_text: str, examples_count: int = 5) -> str:
     """
     Fills a prompt template for a log with completed train examples and one running test case.
 
@@ -62,5 +62,5 @@ def fill_prompt(log_name: str, examples_count: int = 5) -> str:
     with open(template_path) as f:
         template = f.read()
 
-    prompt_filled = template.replace("{EXAMPLES}", examples_str).replace("{NEW_CASE}", new_case_str)
+    prompt_filled = template.replace("{EXAMPLES}", examples_str).replace("{NEW_CASE}", new_case_str).replace("{INTER_CASE_FEATURES}", features_text)
     return prompt_filled, test_sample_key

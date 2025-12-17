@@ -5,15 +5,16 @@ import pandas as pd
 from utils.io_utils import get_input
 from utils.prompt_filler import fill_prompt
 from utils.send_query import send_query
+from utils.inter_case_features import compute_inter_case_features, format_features_for_prompt
 
 RESULTS_DIR = Path("results")
+
 
 def extract_llm_answer(llm_response: str) -> float:
     """
     Extracts the predicted total time from the LLM response.
     Assumes it's on the line immediately after [[ ## answer ## ]]
     """
-
     lines = llm_response.splitlines()
     for i, line in enumerate(lines):
         if "[[ ## answer ## ]]" in line:
@@ -21,19 +22,21 @@ def extract_llm_answer(llm_response: str) -> float:
             return float(answer_line)
     raise ValueError("Could not find [[ ## answer ## ]] in LLM response.")
 
+
 def compute_actual_total_time_from_csv(csv_path: Path, case_id: str, case_col="case", time_col="timestamp") -> float:
     """
     Computes the actual total duration of a case from the raw CSV.
     """
     df = pd.read_csv(csv_path)
+    df.columns = df.columns.str.strip()
     df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
     trace = df[df[case_col] == int(case_id)].sort_values(time_col)
     if len(trace) < 2:
         return 0.0
     return (trace[time_col].iloc[-1] - trace[time_col].iloc[0]).total_seconds()
 
+
 def test_llm(log_name: str, n_runs: int = 1):
-    # Paths
     log_dir = Path("logs") / log_name
     train_path = log_dir / f"{log_name}_train.json"
     test_path = log_dir / f"{log_name}_test.json"
@@ -43,15 +46,20 @@ def test_llm(log_name: str, n_runs: int = 1):
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     results_file = RESULTS_DIR / f"{log_name}_results.json"
 
-    # Load train/test
+    # Load train/test JSONs
     with open(train_path) as f:
-        train = json.load(f)
+        train_traces = json.load(f)
     with open(test_path) as f:
         test_traces = json.load(f)
 
     # Load prompt template
     with open(prompt_template_path) as f:
         prompt_template = f.read()
+
+    # Compute inter-case features once from raw CSV
+    df_raw = pd.read_csv(raw_csv_path)
+    features = compute_inter_case_features(df_raw)
+    features_str = format_features_for_prompt(features)
 
     # LLM info
     log_name, provider, model_name, encoding = get_input()
@@ -74,7 +82,10 @@ def test_llm(log_name: str, n_runs: int = 1):
         if truncated_trace_prompt["events"]:
             truncated_trace_prompt["events"][-1]["activity"] = "RUNNING"
 
-        prompt_text = fill_prompt(log_name, examples_count=5)
+        # Fill prompt including inter-case features
+        prompt_text = fill_prompt(log_name, features_str, examples_count=5)
+
+        # Send to LLM
         response_text = send_query(provider, model_name, prompt_text)
 
         # Extract predicted time
@@ -95,11 +106,10 @@ def test_llm(log_name: str, n_runs: int = 1):
         mae = abs(predicted_time - actual_time)
         maes.append(mae)
 
+        mape = None
         if actual_time != 0:
             mape = abs(predicted_time - actual_time) / actual_time * 100
             mapes.append(mape)
-        else:
-            mape = None
 
         # Store result
         results.append({
@@ -111,7 +121,8 @@ def test_llm(log_name: str, n_runs: int = 1):
             "llm_response": response_text
         })
 
-        print(f"Run {run_idx+1}/{n_runs}: case {case_id}, predicted={predicted_time}, actual={actual_time}, mae={mae}, mape={mape}")
+        print(f"Run {run_idx+1}/{n_runs}: case {case_id}, predicted={predicted_time}, "
+              f"actual={actual_time}, mae={mae}, mape={mape}")
 
     # Save results
     with open(results_file, "w") as f:
@@ -121,6 +132,7 @@ def test_llm(log_name: str, n_runs: int = 1):
     overall_mape = sum(mapes) / len(mapes) if mapes else None
     print(f"Overall MAE over {len(maes)} runs: {overall_mae}")
     print(f"Overall MAPE over {len(mapes)} runs: {overall_mape}")
+
     return results, overall_mae, overall_mape
 
 
