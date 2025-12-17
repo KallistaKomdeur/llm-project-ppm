@@ -63,4 +63,4 @@ def fill_prompt(log_name: str, examples_count: int = 5) -> str:
         template = f.read()
 
     prompt_filled = template.replace("{EXAMPLES}", examples_str).replace("{NEW_CASE}", new_case_str)
-    return prompt_filled
+    return prompt_filled, test_sample_key

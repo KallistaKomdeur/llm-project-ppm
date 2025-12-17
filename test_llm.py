@@ -1,0 +1,129 @@
+import json
+import random
+from pathlib import Path
+import pandas as pd
+from utils.io_utils import get_input
+from utils.prompt_filler import fill_prompt
+from utils.send_query import send_query
+
+RESULTS_DIR = Path("results")
+
+def extract_llm_answer(llm_response: str) -> float:
+    """
+    Extracts the predicted total time from the LLM response.
+    Assumes it's on the line immediately after [[ ## answer ## ]]
+    """
+
+    lines = llm_response.splitlines()
+    for i, line in enumerate(lines):
+        if "[[ ## answer ## ]]" in line:
+            answer_line = lines[i + 1].strip()
+            return float(answer_line)
+    raise ValueError("Could not find [[ ## answer ## ]] in LLM response.")
+
+def compute_actual_total_time_from_csv(csv_path: Path, case_id: str, case_col="case", time_col="timestamp") -> float:
+    """
+    Computes the actual total duration of a case from the raw CSV.
+    """
+    df = pd.read_csv(csv_path)
+    df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
+    trace = df[df[case_col] == int(case_id)].sort_values(time_col)
+    if len(trace) < 2:
+        return 0.0
+    return (trace[time_col].iloc[-1] - trace[time_col].iloc[0]).total_seconds()
+
+def test_llm(log_name: str, n_runs: int = 1):
+    # Paths
+    log_dir = Path("logs") / log_name
+    train_path = log_dir / f"{log_name}_train.json"
+    test_path = log_dir / f"{log_name}_test.json"
+    raw_csv_path = log_dir / f"{log_name}.csv"
+    prompt_template_path = Path("prompts") / log_name / f"{log_name}_template_paper.txt"
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    results_file = RESULTS_DIR / f"{log_name}_results.json"
+
+    # Load train/test
+    with open(train_path) as f:
+        train = json.load(f)
+    with open(test_path) as f:
+        test_traces = json.load(f)
+
+    # Load prompt template
+    with open(prompt_template_path) as f:
+        prompt_template = f.read()
+
+    # LLM info
+    log_name, provider, model_name, encoding = get_input()
+
+    results = []
+    maes = []
+    mapes = []
+
+    for run_idx in range(n_runs):
+        # Pick a random test trace
+        case_id = random.choice(list(test_traces.keys()))
+        truncated_trace = test_traces[case_id]
+
+        # Build truncated "running" version for prompt
+        truncated_trace_prompt = {
+            "trace_attributes": truncated_trace["trace_attributes"],
+            "events": truncated_trace["events"][:],
+            "total_duration": "RUNNING"
+        }
+        if truncated_trace_prompt["events"]:
+            truncated_trace_prompt["events"][-1]["activity"] = "RUNNING"
+
+        prompt_text = fill_prompt(log_name, examples_count=5)
+        response_text = send_query(provider, model_name, prompt_text)
+
+        # Extract predicted time
+        try:
+            predicted_time = extract_llm_answer(response_text)
+        except Exception as e:
+            print(f"Error extracting LLM answer for case {case_id}: {e}")
+            continue
+
+        # Get actual total time from CSV
+        try:
+            actual_time = compute_actual_total_time_from_csv(raw_csv_path, case_id)
+        except Exception as e:
+            print(f"Skipping case {case_id}, error computing actual total_duration: {e}")
+            continue
+
+        # Compute metrics
+        mae = abs(predicted_time - actual_time)
+        maes.append(mae)
+
+        if actual_time != 0:
+            mape = abs(predicted_time - actual_time) / actual_time * 100
+            mapes.append(mape)
+        else:
+            mape = None
+
+        # Store result
+        results.append({
+            "case_id": case_id,
+            "predicted": predicted_time,
+            "actual": actual_time,
+            "mae": mae,
+            "mape": mape,
+            "llm_response": response_text
+        })
+
+        print(f"Run {run_idx+1}/{n_runs}: case {case_id}, predicted={predicted_time}, actual={actual_time}, mae={mae}, mape={mape}")
+
+    # Save results
+    with open(results_file, "w") as f:
+        json.dump(results, f, indent=2)
+
+    overall_mae = sum(maes) / len(maes) if maes else None
+    overall_mape = sum(mapes) / len(mapes) if mapes else None
+    print(f"Overall MAE over {len(maes)} runs: {overall_mae}")
+    print(f"Overall MAPE over {len(mapes)} runs: {overall_mape}")
+    return results, overall_mae, overall_mape
+
+
+if __name__ == "__main__":
+    log_name, provider, model_name, encoding = get_input()
+    test_llm(log_name, n_runs=2)
