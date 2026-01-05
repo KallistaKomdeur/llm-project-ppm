@@ -11,7 +11,7 @@ The log is represented as a python dictionary containing one dictionary for each
 Below are completed example cases:
 {EXAMPLES}
 
-Additionally, here are some inter-case descriptions:
+Additionally, here are some inter-case features:
 {INTER_CASE_FEATURES}
 
 Now predict the total time for the following uncompleted case (still running):
@@ -27,5 +27,6 @@ All interactions will be structured in the following way, with the appropriate v
 
 [[ ## completed ## ]]
 
-In adhering to this structure, your objective is to analyze the event log, and apply reasoning to derive the lead time for a new case. Ensure to articulate each step of your thought process in the reasoning field, detailing how you identify relationships with past cases and leverage your intuition about the meaining of activities to arrive at the solution. The answer should be the final prediction of the lead time for the given process instance.
+In adhering to this structure, your objective is to analyze the event log, and apply reasoning to derive the lead time for a new case. Ensure to articulate each step of your thought process in the reasoning field, detailing how you identify relationships with past cases and leverage your intuition about the meaning of activities to arrive at the solution. The answer should be the final prediction of the lead time for the given process instance.
+
 Respond with the corresponding output fields, starting with the field [[ ## reasoning ## ]], then [[ ## answer ## ]], and then ending with the marker for [[ ## completed ## ]].
