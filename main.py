@@ -6,7 +6,7 @@ import pandas as pd
 
 
 if __name__ == "__main__":
-    log_name, provider, model_name, encoding = get_input()
+    log_name, provider, model_name, encoding, prompt = get_input()
     load_or_preprocess(log_name)
     features = compute_inter_case_features(pd.read_csv(f"logs/{log_name}/{log_name}.csv"))
     features_text = format_features_for_prompt(features)
