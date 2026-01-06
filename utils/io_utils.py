@@ -6,7 +6,7 @@ def get_input() -> tuple:
     parser.add_argument("provider", type=str)
     parser.add_argument("--model_name", type=str, default = "2.5-flash")
     parser.add_argument("--encoding", type=str, default = "seq")
-    parser.add_argument("--prompt", type=str, default = "bpic2020_template_paper.txt")
+    parser.add_argument("--prompt", type=str, default = "bpic2020_intercase_features.txt")
     args = parser.parse_args()
 
     log_name = args.log_name
