@@ -2,13 +2,13 @@ import json
 import random
 from pathlib import Path
 import pandas as pd
+import re
 from utils.io_utils import get_input
 from utils.prompt_filler import fill_prompt
 from utils.send_query import send_query
 from utils.inter_case_features import compute_inter_case_features, format_features_for_prompt
 
-RESULTS_DIR = Path("results")
-
+BASE_DIR = Path(__file__).resolve().parent
 
 def extract_llm_answer(llm_response: str) -> float:
     """
@@ -36,15 +36,22 @@ def compute_actual_total_time_from_csv(csv_path: Path, case_id: str, case_col="c
     return (trace[time_col].iloc[-1] - trace[time_col].iloc[0]).total_seconds()
 
 
-def test_llm(log_name: str, n_runs: int = 1):
+def test_llm(log_name: str, provider, model_name, prompt, n_runs: int = 1):
+    RESULTS_DIR = BASE_DIR / "results" / log_name
     log_dir = Path("logs") / log_name
     train_path = log_dir / f"{log_name}_train.json"
     test_path = log_dir / f"{log_name}_test.json"
     raw_csv_path = log_dir / f"{log_name}.csv"
-    prompt_template_path = Path("prompts") / log_name / f"{log_name}_template_paper.txt"
+    prompt_template_path = Path("prompts") / log_name / prompt
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    results_file = RESULTS_DIR / f"{log_name}_results.json"
+    
+    pattern = re.compile(rf"{re.escape(log_name)}_results_(\d+)\.json")
+
+    # Name and index results file
+    existing_numbers = [int(m.group(1)) for p in RESULTS_DIR.glob(f"{log_name}_results_*.json") if (m := pattern.fullmatch(p.name))]
+    next_idx = max(existing_numbers, default=0) + 1
+    results_file = RESULTS_DIR / f"{log_name}_results_{next_idx}.json"
 
     # Load train/test JSONs
     with open(train_path) as f:
@@ -60,9 +67,6 @@ def test_llm(log_name: str, n_runs: int = 1):
     df_raw = pd.read_csv(raw_csv_path)
     features = compute_inter_case_features(df_raw)
     features_str = format_features_for_prompt(features)
-
-    # LLM info
-    log_name, provider, model_name, encoding = get_input()
 
     results = []
     maes = []
@@ -137,5 +141,5 @@ def test_llm(log_name: str, n_runs: int = 1):
 
 
 if __name__ == "__main__":
-    log_name, provider, model_name, encoding = get_input()
-    test_llm(log_name, n_runs=2)
+    log_name, provider, model_name, encoding, prompt = get_input()
+    test_llm(log_name, provider, model_name, prompt, n_runs=2)
