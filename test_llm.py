@@ -37,7 +37,12 @@ def compute_actual_total_time_from_csv(csv_path: Path, case_id: str, case_col="c
 
 
 def test_llm(log_name: str, provider, model_name, prompt, n_runs: int = 1):
-    RESULTS_DIR = BASE_DIR / "results" / log_name
+    prompt_name = Path(prompt).stem
+    prefix = f"{log_name}_"
+    if prompt_name.startswith(prefix):
+        prompt_name = prompt_name[len(prefix):]
+
+    RESULTS_DIR = BASE_DIR / "results" / log_name / prompt_name / provider
     log_dir = Path("logs") / log_name
     train_path = log_dir / f"{log_name}_train.json"
     test_path = log_dir / f"{log_name}_test.json"
@@ -87,7 +92,12 @@ def test_llm(log_name: str, provider, model_name, prompt, n_runs: int = 1):
             truncated_trace_prompt["events"][-1]["activity"] = "RUNNING"
 
         # Fill prompt including inter-case features
-        prompt_text = fill_prompt(log_name, features_str, examples_count=5)
+        prompt_text = fill_prompt(log_name, prompt, features_str, examples_count=5)
+
+        # IF YOU JUST WANT TO READ THE PROMPT, UNCOMMENT THIS!!!
+        print(prompt_text)
+        import sys
+        sys.exit(0)
 
         # Send to LLM
         response_text = send_query(provider, model_name, prompt_text)
@@ -142,4 +152,4 @@ def test_llm(log_name: str, provider, model_name, prompt, n_runs: int = 1):
 
 if __name__ == "__main__":
     log_name, provider, model_name, encoding, prompt = get_input()
-    test_llm(log_name, provider, model_name, prompt, n_runs=2)
+    test_llm(log_name, provider, model_name, prompt, n_runs=1)
