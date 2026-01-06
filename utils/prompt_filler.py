@@ -9,7 +9,7 @@ from utils.local_inter_case_features import (
 )
 
 
-def fill_prompt(log_name: str, features_text: str, examples_count: int = 5) -> str:
+def fill_prompt(log_name: str, prompt, features_text: str, examples_count: int = 5) -> str:
     """
     Fills a prompt template for a log with completed train examples
     and one running test case, including local inter-case context
@@ -17,7 +17,7 @@ def fill_prompt(log_name: str, features_text: str, examples_count: int = 5) -> s
     """
 
     prompts_dir = Path("prompts") / log_name
-    template_path = prompts_dir / f"{log_name}_template_paper.txt"
+    template_path = prompts_dir / prompt
 
     logs_dir = Path("logs") / log_name
     train_path = logs_dir / f"{log_name}_train.json"
