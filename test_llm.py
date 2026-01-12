@@ -45,16 +45,13 @@ def test_llm(
     provider: str,
     model: str,
     configuration: str,      # single | global_only | inter-case_only
-    prompt_file: str,
     n_runs: int = 1,
     print_only: bool = True
 ):
-    prompt_name = Path(prompt_file).stem
-    prefix = f"{log_name}_"
-    if prompt_name.startswith(prefix):
-        prompt_name = prompt_name[len(prefix):]
-
-    RESULTS_DIR = BASE_DIR / "results" / log_name / prompt_name / provider
+    
+    prompt_file = f"{log_name}_{configuration}.txt"
+    
+    RESULTS_DIR = BASE_DIR / "results" / log_name / configuration / provider
     log_dir = Path("logs") / log_name
     raw_csv_path = log_dir / f"{log_name}.csv"
 
@@ -149,14 +146,13 @@ def test_llm(
 
 # MAIN
 if __name__ == "__main__":
-    log_name, provider, model, configuration, prompt = get_input()
+    log_name, provider, model, configuration = get_input()
 
     test_llm(
         log_name = log_name,
         provider = provider,
         model = model,
         configuration = configuration,
-        prompt_file = prompt,
         n_runs = 1,
         print_only = True   # set True to just inspect prompt
     )
