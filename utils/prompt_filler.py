@@ -8,12 +8,11 @@ from utils.features.inter_case_state import (
     inter_case_state_at,
     format_inter_case_state
 )
-from utils.features.registry import build_feature_block
 
 def fill_prompt(
     log_name: str,
     prompt_file: str,
-    configuration: str,              # "single" | "global" | "inter-case_only"
+    configuration: str,
     global_features_text: str | None,
     examples_count: int = 5
 ):
@@ -33,61 +32,65 @@ def fill_prompt(
     with open(prompts_dir / prompt_file) as f:
         template = f.read()
 
-    # inter-case context helper
-    def inter_case_context(case_id: str):
-        cutoff = df_raw[df_raw["case"] == int(case_id)]["timestamp"].max()
-        state = inter_case_state_at(df_raw, cutoff, exclude_case=case_id)
-        return format_inter_case_state(state)
+    def inter_case_states_for_trace(trace, case_id):
+        """
+        Computes inter-case state at each event timestamp.
+        """
+        states = []
+        timestamps = (
+            df_raw[df_raw["case"] == int(case_id)]
+            .sort_values("timestamp")["timestamp"]
+            .tolist()
+        )
 
-    # examples
+        for ts in timestamps:
+            state = inter_case_state_at(
+                df_raw,
+                ts,
+                exclude_case=case_id
+            )
+            states.append(format_inter_case_state(state))
+
+        return states
+
+    # ---- examples ----
     example_blocks = []
 
-    sampled_cases = random.sample(
+    for case_id in random.sample(
         list(train_traces.keys()),
         min(examples_count, len(train_traces))
-    )
+    ):
+        trace = train_traces[case_id]
 
-    for case_id in sampled_cases:
-        single = format_single_case(train_traces[case_id])
-        inter_case = (
-            inter_case_context(case_id)
-            if configuration == "inter-case_only"
-            else None
-        )
+        inter_case_states = None
+        if configuration == "inter-case_only":
+            inter_case_states = inter_case_states_for_trace(trace, case_id)
 
-        example_blocks.append(
-            build_feature_block(
-                configuration,
-                single_case=single,
-                global_features=None,   
-                inter_case=inter_case
-            )
-        )
+        single = format_single_case(trace, inter_case_states)
+        example_blocks.append(single)
 
     examples_str = "\n\n".join(example_blocks)
 
-    # test case 
+    # ---- test case ----
     test_case_id = random.choice(list(test_traces.keys()))
     test_trace = test_traces[test_case_id]
 
-    single_test = json.dumps({
-        f"Case_{test_case_id}": json.loads(format_single_case(test_trace))
-    })
+    test_inter_case_states = None
+    if configuration == "inter-case_only":
+        test_inter_case_states = inter_case_states_for_trace(
+            test_trace,
+            test_case_id
+        )
 
-    test_inter_case = (
-        inter_case_context(test_case_id)
-        if configuration == "inter-case_only"
-        else None
+    test_block = json.dumps(
+        {
+            f"Case_{test_case_id}": json.loads(
+                format_single_case(test_trace, test_inter_case_states)
+            )
+        },
+        indent=2
     )
 
-    test_block = build_feature_block(
-        configuration,
-        single_case=single_test,
-        global_features=None,          
-        inter_case=test_inter_case
-    )
-
-    # final assembly
     filled = (
         template
         .replace("{GLOBAL_FEATURES}", global_features_text or "")
