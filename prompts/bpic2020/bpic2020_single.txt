@@ -11,9 +11,6 @@ The log is represented as a python dictionary containing one dictionary for each
 Below are completed example cases:
 {EXAMPLES}
 
-Additionally, here are some inter-case features:
-{INTER_CASE_FEATURES}
-
 Now predict the total time for the following uncompleted case (still running):
 {NEW_CASE}
 

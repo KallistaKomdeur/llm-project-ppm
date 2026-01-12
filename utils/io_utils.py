@@ -1,18 +1,14 @@
 import argparse
 
 def get_input() -> tuple:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("log_name", type=str)
-    parser.add_argument("provider", type=str)
-    parser.add_argument("--model_name", type=str, default = "2.5-flash")
-    parser.add_argument("--encoding", type=str, default = "seq")
-    parser.add_argument("--prompt", type=str, default = "bpic2020_intercase_features.txt")
+    parser = argparse.ArgumentParser(description="Run LLM experiment on event log")
+    # Required
+    parser.add_argument("log_name", type=str, help="Name of the event log")
+    parser.add_argument("provider", type=str, help="LLM provider (e.g. gemini, openai)")
+    parser.add_argument("configuration", type=str, choices=["single", "global_only", "inter-case_only"], help="Which input configuration to use")
+    parser.add_argument("prompt", type=str, help="Prompt template filename")
+    # Optional
+    parser.add_argument("--model", type=str, default = "2.5-flash", help="Model name for the provider (e.g. 2.5-flash)")
     args = parser.parse_args()
 
-    log_name = args.log_name
-    provider = args.provider
-    model_name = args.model_name
-    encoding = args.encoding
-    prompt = args.prompt
-
-    return log_name, provider, model_name, encoding, prompt
+    return args.log_name, args.provider, args.model, args.configuration, args.prompt
