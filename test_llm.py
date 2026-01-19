@@ -63,7 +63,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
     for run_idx in range(n_runs):
         # Build prompt
-        prompt_text, true_total_time = fill_prompt(log_name=log_name, configuration=configuration, examples_count=5)
+        prompt_text, true_total_time, prefix_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=5)
 
         # If debugging, only print prompt
         if print_only:
@@ -83,6 +83,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "model": model,
             "configuration": configuration,
             "log_name": log_name,
+            "prefix_length": prefix_length,
 
             "prompt": prompt_text,
 
@@ -117,5 +118,5 @@ if __name__ == "__main__":
         model=model,
         configuration=configuration,
         n_runs=1,
-        print_only=True  # set False to actually query, True to just print the prompt
+        print_only=False  # set False to actually query, True to just print the prompt
     )
