@@ -28,6 +28,14 @@ Since logs are too large to store on GitHub, you'll have to upload yours yoursel
 2. In "logs", make a folder with the name of your event log
 3. In "logs/your_event_log", place file "your_event_log.csv"
 
+### 4. Prepare your environment.
+
+In the project root, add a .env file. This file is ignored (see .gitignore), so your keys won't be pushed to github. In here, define:
+
+- GEMINI_API_KEY
+- OPENAI_API_KEY
+- ANTHROPIC_API_KEY
+
 ## Running the project
 
 ### Getting LLM responses
