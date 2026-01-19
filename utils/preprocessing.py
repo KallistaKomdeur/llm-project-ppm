@@ -64,11 +64,6 @@ def extract_resource_experience(group, case_id_col, activity_col, timestamp_col)
     for i in range(len(group)):
         hist = group.iloc[: i + 1]
 
-        group.loc[i, "n_tasks"] = len(hist)
-        group.loc[i, "n_cases"] = hist[case_id_col].nunique()
-        group.loc[i, "n_acts"] = hist[activity_col].nunique()
-        group.loc[i, "n_handoffs"] = hist["prev_resource"].nunique()
-
         group.loc[i, "ent_act"] = ent(hist, activity_col)
         group.loc[i, "ent_case"] = ent(hist, case_id_col)
         group.loc[i, "ent_handoff"] = ent(hist, "prev_resource")
@@ -108,16 +103,11 @@ def build_event_features(group, timestamp_col, activity_col):
         event_features = {
             "timesincemidnight": row["timesincemidnight"],
             "weekday": row["weekday"],
-            "hour": row["hour"],
             "month": row["month"],
             "timesincelastevent": row["timesincelastevent"],
             "timesincecasestart": row["timesincecasestart"],
             "event_nr": row["event_nr"],
             "prev_resource": row["prev_resource"],
-            "n_tasks": row["n_tasks"],
-            "n_cases": row["n_cases"],
-            "n_acts": row["n_acts"],
-            "n_handoffs": row["n_handoffs"],
             "ent_act": row["ent_act"],
             "ent_case": row["ent_case"],
             "ent_handoff": row["ent_handoff"],
@@ -179,7 +169,6 @@ def preprocess_log(log_name: str):
     # Timestamp features
     data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
     data["weekday"] = data[timestamp_col].dt.weekday
-    data["hour"] = data[timestamp_col].dt.hour
     data["month"] = data[timestamp_col].dt.month
 
     data = data.groupby(case_id_col).apply(lambda g: extract_timestamp_features(g, timestamp_col)).reset_index(drop=True)
