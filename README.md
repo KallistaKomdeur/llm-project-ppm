@@ -30,6 +30,8 @@ Since logs are too large to store on GitHub, you'll have to upload yours yoursel
 
 ## Running the project
 
+### Getting LLM responses
+
 To start the main program, run the following in the terminal:
 
 ```
@@ -44,3 +46,13 @@ The input parameters are:
 4. OPTIONAL --model: which model to use from the LLM provider. Default to gemini 2.5-flash
 
 If you want to only see the prompt and not the result, change in "test_llm.py" flag "print_only" to True.
+
+### Evaluating LLM responses
+
+To evaluate LLM results for a particular log, configuration, or provider, run the following in the terminal:
+
+```
+python -m test_llm <log_name> <provider> <configuration>
+```
+
+The input parameters are the same as those described in section "Getting LLM responses".
