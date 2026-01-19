@@ -1,0 +1,6 @@
+log_name: bpic2017_o
+columns:
+  case_id: case
+  activity: activity
+  resource: resource
+  timestamp: timestamp

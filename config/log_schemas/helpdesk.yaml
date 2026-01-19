@@ -1,0 +1,6 @@
+log_name: helpdesk
+columns:
+  case_id: case
+  activity: activity
+  resource: resource
+  timestamp: timestamp
