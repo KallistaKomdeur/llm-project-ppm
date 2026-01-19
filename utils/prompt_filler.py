@@ -52,7 +52,7 @@ def truncate_case(case: Dict, configuration: str) -> Dict:
         "total_time": "RUNNING"
     }
 
-    return truncated_case
+    return truncated_case, cut_idx
 
 # ======================
 # MAIN FUNCTION
@@ -103,7 +103,7 @@ def fill_prompt(
     test_case = random.choice(test_cases)
     true_total_time = test_case["total_time"]
 
-    truncated_case = truncate_case(test_case, configuration)
+    truncated_case, prefix_length = truncate_case(test_case, configuration)
 
     test_block = json.dumps(
         {"NEW_CASE": truncated_case},
@@ -119,4 +119,4 @@ def fill_prompt(
         .replace("{NEW_CASE}", test_block)
     )
 
-    return filled_prompt, true_total_time
+    return filled_prompt, true_total_time, prefix_length
