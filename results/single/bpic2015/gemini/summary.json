@@ -1,0 +1,11 @@
+{
+  "overall_mae": 76320.0,
+  "records": [
+    {
+      "prefix_length": 39,
+      "predicted": 73440.0,
+      "actual": 149760.0,
+      "mae": 76320.0
+    }
+  ]
+}

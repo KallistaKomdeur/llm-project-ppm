@@ -4,8 +4,13 @@ from typing import List, Dict
 import numpy as np
 from utils.io_utils import get_input
 
-
+# ======================
+# HELPER FUNCTIONS
+# ======================
 def load_all_runs(results_dir: Path) -> List[Dict]:
+    """
+    Get all runs in this folder
+    """
     runs = sorted(results_dir.glob("run_*.jsonl"))
     records = []
     for file in runs:
@@ -16,18 +21,21 @@ def load_all_runs(results_dir: Path) -> List[Dict]:
                 records.append(json.loads(line))
     return records
 
-
 def compute_mae(y_true: List[float], y_pred: List[float]) -> float:
+    """
+    Computes and returns mean absolute erorr (MAE) in minutes
+    """
     return float(np.mean(np.abs(np.array(y_true) - np.array(y_pred))))
 
-
+# ======================
+# MAIN FUNCTION
+# ======================
 def evaluate(configuration: str, log_name: str, provider: str):
     BASE_DIR = Path(__file__).resolve().parent
     results_dir = BASE_DIR / "results" / configuration / log_name / provider
-
     records = load_all_runs(results_dir)
 
-    # --- compute MAE overall ---
+    # Compute mean MAE over all entries
     y_true = []
     y_pred = []
     for r in records:
@@ -40,12 +48,10 @@ def evaluate(configuration: str, log_name: str, provider: str):
         raise ValueError("No valid records found.")
 
     overall_mae = compute_mae(y_true, y_pred)
-    print("OVERALL MAE:", overall_mae)
 
-    # --- produce table: one line per record ---
+    # Get information per line for later analysis
     lines = []
     for r in records:
-        run = r.get("run", "unknown")
         prefix_length = r.get("prefix_length", None)
         pred = r.get("llm_answer", None)
         actual = r.get("actual_case_duration", None)
@@ -55,19 +61,27 @@ def evaluate(configuration: str, log_name: str, provider: str):
 
         mae = abs(float(pred) - float(actual))
         lines.append({
-            "run": run,
             "prefix_length": prefix_length,
             "predicted": float(pred),
             "actual": float(actual),
             "mae": mae
         })
 
-    # print table
-    for line in lines:
-        print(line)
+    # Save everything in summary file
+    summary = {
+        "overall_mae": overall_mae,
+        "records": lines
+    }
+
+    summary_path = results_dir / "summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
 
     return overall_mae
 
+# ======================
+# ENTRY POINT
+# ======================
 if __name__ == "__main__":
     log_name, provider, model, configuration = get_input()
     evaluate(configuration, log_name, provider)
