@@ -1,101 +1,122 @@
 import json
 import random
 from pathlib import Path
-import pandas as pd
+from typing import Dict
 
-from utils.features.single_case import format_single_case
-from utils.features.inter_case_state import (
-    inter_case_state_at,
-    format_inter_case_state
-)
+from utils.data_split import load_cases, temporal_train_test_split
 
+# ======================
+# HELPER FUNCTIONS
+# ======================
+def format_case(case: Dict, configuration: str) -> Dict:
+    """
+    Formats a full case (examples always complete).
+    """
+
+    # If single, only include the activity and time since case start
+    if configuration == "single":
+        seq = []
+        for act, t, _ in case["ActTimeSeq"]:
+            seq.append([act, t])
+
+        return {
+            "ActTimeSeq": seq,
+            "total_time": case["total_time"]
+        }
+
+    # Determines whether inter-case features are included in the prompt
+    elif configuration == "inter-case":
+        return case
+
+    else:
+        raise ValueError(f"Unknown configuration: {configuration}")
+
+def truncate_case(case: Dict, configuration: str) -> Dict:
+    """
+    Randomly truncates a case and marks total_time as RUNNING.
+    """
+
+    seq = case["ActTimeSeq"]
+    if len(seq) < 2:
+        raise ValueError("Cannot truncate case with <2 events")
+
+    cut_idx = random.randint(1, len(seq) - 1)
+    truncated_seq = seq[:cut_idx]
+
+    if configuration == "single":
+        truncated_seq = [[act, t] for act, t, _ in truncated_seq]
+
+    truncated_case = {
+        **case,
+        "ActTimeSeq": truncated_seq,
+        "total_time": "RUNNING"
+    }
+
+    return truncated_case
+
+# ======================
+# MAIN FUNCTION
+# ======================
 def fill_prompt(
     log_name: str,
-    prompt_file: str,
     configuration: str,
-    global_features_text: str | None,
     examples_count: int = 5
 ):
+    """
+    Fills the prompt template with values. 
+    - Examples come only from temporal training set
+    - Prediction case comes only from temporal test set
+    """
 
-    logs_dir = Path("logs") / log_name
-    prompts_dir = Path("prompts") / log_name
+    root = Path(__file__).resolve().parents[1]
 
-    with open(logs_dir / f"{log_name}_train.json") as f:
-        train_traces = json.load(f)
+    log_dir = root / "logs" / log_name
+    prompt_path = root / "prompts" / f"{configuration}.txt"
+    preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
 
-    with open(logs_dir / f"{log_name}_test.json") as f:
-        test_traces = json.load(f)
+    if not preprocessed_path.exists():
+        raise FileNotFoundError(preprocessed_path)
 
-    df_raw = pd.read_csv(logs_dir / f"{log_name}.csv")
-    df_raw["timestamp"] = pd.to_datetime(df_raw["timestamp"], errors="coerce")
+    if not prompt_path.exists():
+        raise FileNotFoundError(prompt_path)
 
-    with open(prompts_dir / prompt_file) as f:
-        template = f.read()
+    # Load & split
+    cases = load_cases(preprocessed_path)
+    train_cases, test_cases = temporal_train_test_split(cases)
 
-    def inter_case_states_for_trace(trace, case_id):
-        """
-        Computes inter-case state at each event timestamp.
-        """
-        states = []
-        timestamps = (
-            df_raw[df_raw["case"] == int(case_id)]
-            .sort_values("timestamp")["timestamp"]
-            .tolist()
-        )
+    if len(train_cases) < examples_count:
+        raise ValueError("Not enough training cases for examples")
 
-        for ts in timestamps:
-            state = inter_case_state_at(
-                df_raw,
-                ts,
-                exclude_case=case_id
-            )
-            states.append(format_inter_case_state(state))
+    # Sample examples from TRAIN
+    example_cases = random.sample(train_cases, examples_count)
 
-        return states
-
-    # ---- examples ----
     example_blocks = []
-
-    for case_id in random.sample(
-        list(train_traces.keys()),
-        min(examples_count, len(train_traces))
-    ):
-        trace = train_traces[case_id]
-
-        inter_case_states = None
-        if configuration == "inter-case_only":
-            inter_case_states = inter_case_states_for_trace(trace, case_id)
-
-        single = format_single_case(trace, inter_case_states)
-        example_blocks.append(single)
+    for i, case in enumerate(example_cases, start=1):
+        formatted = format_case(case, configuration)
+        example_blocks.append(
+            json.dumps({f"Example_{i}": formatted}, indent=2)
+        )
 
     examples_str = "\n\n".join(example_blocks)
 
-    # ---- test case ----
-    test_case_id = random.choice(list(test_traces.keys()))
-    test_trace = test_traces[test_case_id]
+    # Sample prediction case from TEST
+    test_case = random.choice(test_cases)
+    true_total_time = test_case["total_time"]
 
-    test_inter_case_states = None
-    if configuration == "inter-case_only":
-        test_inter_case_states = inter_case_states_for_trace(
-            test_trace,
-            test_case_id
-        )
+    truncated_case = truncate_case(test_case, configuration)
 
     test_block = json.dumps(
-        {
-            f"Case_{test_case_id}": json.loads(
-                format_single_case(test_trace, test_inter_case_states)
-            )
-        },
+        {"NEW_CASE": truncated_case},
         indent=2
     )
 
-    filled = (
+    # Fill template
+    template = prompt_path.read_text(encoding="utf-8")
+
+    filled_prompt = (
         template
-        .replace("{GLOBAL_FEATURES}", global_features_text or "")
         .replace("{EXAMPLES}", examples_str)
         .replace("{NEW_CASE}", test_block)
     )
 
-    return filled, test_case_id
+    return filled_prompt, true_total_time
