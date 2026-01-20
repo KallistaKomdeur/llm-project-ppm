@@ -7,6 +7,7 @@ from utils.send_query import send_query
 from utils.prompt_filler import fill_prompt
 from utils.preprocessing import preprocess_log
 from utils.llm_parsing import parse_llm_output
+from utils.prompt_splitter import split_prompt_by_markers
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -57,24 +58,36 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
     """
     # Ensure log is preprocessed
     preprocessed_path = ensure_preprocessed(log_name)
-
-    # Instantiate result file
     results_path = get_results_path(configuration, log_name, provider)
 
     for run_idx in range(n_runs):
         # Build prompt
         prompt_text, true_total_time, prefix_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=5)
 
+        # Optional splitting
+        prompt_parts = (
+            split_prompt_by_markers(prompt_text)
+            if (configuration == "single_split")
+            else [prompt_text]
+        )
+
         # If debugging, only print prompt
         if print_only:
-            print(prompt_text)
+            for i, part in enumerate(prompt_parts, start=1):
+                print(f"\n--- PROMPT PART {i}/{len(prompt_parts)} ---\n")
+                print(part)
             return
 
-        # Query LLM
-        llm_output = send_query(provider, model, prompt_text)
+        llm_outputs = []
 
+        for i, part in enumerate(prompt_parts, start=1):
+            print(f"Sending part {i}/{len(prompt_parts)}")
+            output = send_query(provider, model, part)
+            llm_outputs.append(output)
+        
+        final_output = llm_outputs[-1]
         # Parse response
-        reasoning, answer = parse_llm_output(llm_output)
+        reasoning, answer = parse_llm_output(final_output)
 
         # Build log record
         record = {
@@ -85,11 +98,11 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "log_name": log_name,
             "prefix_length": prefix_length,
 
-            "prompt": prompt_text,
+            "prompt_parts": prompt_parts,
+            "llm_raw_output": llm_outputs,
 
             "llm_reasoning": reasoning,
             "llm_answer": answer,
-            "llm_raw_output": llm_output,
 
             "actual_case_duration": true_total_time
         }
@@ -118,5 +131,5 @@ if __name__ == "__main__":
         model=model,
         configuration=configuration,
         n_runs=1,
-        print_only=False  # set False to actually query, True to just print the prompt
+        print_only=True  # set False to actually query, True to just print the prompt
     )

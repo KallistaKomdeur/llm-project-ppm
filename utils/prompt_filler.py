@@ -13,8 +13,8 @@ def format_case(case: Dict, configuration: str) -> Dict:
     Formats a full case (examples always complete).
     """
 
-    # If single, only include the activity and time since case start
-    if configuration == "single":
+    # If single or split, only include the activity and time since case start
+    if ((configuration == "single") or (configuration == "single_split")):
         seq = []
         for act, t, _ in case["ActTimeSeq"]:
             seq.append([act, t])
@@ -43,7 +43,7 @@ def truncate_case(case: Dict, configuration: str) -> Dict:
     cut_idx = random.randint(1, len(seq) - 1)
     truncated_seq = seq[:cut_idx]
 
-    if configuration == "single":
+    if ((configuration == "single") or (configuration == "single_split")):
         truncated_seq = [[act, t] for act, t, _ in truncated_seq]
 
     truncated_case = {
