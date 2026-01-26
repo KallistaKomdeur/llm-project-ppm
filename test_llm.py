@@ -67,7 +67,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
         # Optional splitting
         prompt_parts = (
             split_prompt_by_markers(prompt_text)
-            if (configuration == "single_split")
+            if "split" in configuration
             else [prompt_text]
         )
 
