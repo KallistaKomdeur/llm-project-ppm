@@ -8,6 +8,7 @@ from utils.prompt_filler import fill_prompt
 from utils.preprocessing import preprocess_log
 from utils.llm_parsing import parse_llm_output
 from utils.prompt_splitter import split_prompt_by_markers
+from utils.load_config import load_config
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -49,7 +50,7 @@ def get_results_path(configuration: str, log_name: str, provider: str) -> Path:
 # ======================
 # MAIN FUNCTION
 # ======================
-def test_llm(log_name: str, provider: str, model: str | None, configuration: str, n_runs: int = 1, print_only: bool = True):
+def test_llm(log_name: str, provider: str, model: str | None, configuration: str, n_runs: int, print_only: bool, examples_count: int):
     """
     Runs LLM predictions and logs each query.
     """
@@ -59,7 +60,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
     for run_idx in range(n_runs):
         # Build prompt
-        prompt_text, true_total_time, prefix_length, include_case_attr, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=1)
+        prompt_text, true_total_time, prefix_length, include_case_attr, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count)
 
         # Optional splitting
         prompt_parts = (
@@ -123,12 +124,14 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 # ======================
 if __name__ == "__main__":
     log_name, provider, model, configuration = get_input()
+    config = load_config()
 
     test_llm(
         log_name=log_name,
         provider=provider,
         model=model,
         configuration=configuration,
-        n_runs=1,
-        print_only=True  # set False to actually query, True to just print the prompt
+        n_runs= config.get("n_runs", 1),
+        print_only= config.get("print_only", True),
+        examples_count=config.get("examples_count", 1)
     )

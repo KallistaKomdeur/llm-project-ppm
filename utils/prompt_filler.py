@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Dict, List
 
 from utils.data_split import load_cases, temporal_train_test_split
+from utils.load_config import load_config
 
 # ======================
 # HELPER FUNCTIONS
 # ======================
 def format_case(case: Dict, configuration: str, include_case_attr: bool, included_inter_case: List[str]) -> Dict:
     """
-    Formats a full case (examples always complete).
+    Formats a full case.
     """
     # Potentially add case attributes
     result = {}
@@ -61,6 +62,9 @@ def truncate_case(case: Dict) -> Dict:
     return truncated_case, cut_idx
 
 def select_case_attributes(case:Dict, include_case_attr:bool) -> Dict:
+    """
+    Adds all or none of the case attributes depending on boolean. 
+    """
     if include_case_attr:
         return {
             k: v for k, v in case.items()
@@ -79,8 +83,6 @@ def fill_prompt(
 ):
     """
     Fills the prompt template with values. 
-    - Examples come only from temporal training set
-    - Prediction case comes only from temporal test set
     """
 
     root = Path(__file__).resolve().parents[1]
@@ -96,34 +98,9 @@ def fill_prompt(
         raise FileNotFoundError(prompt_path)
 
     # Change this to select which features to include
-    include_case_attr = True
-    
-    included_inter_case = [
-        "timesincemidnight",
-        "weekday",
-        "month",
-        "timesincelastevent",
-        "timesincecasestart",
-        "event_nr",
-        "prev_resource",
-        "ent_act",
-        "ent_case",
-        "ent_handoff",
-        "busyness",
-        "open_cases",
-        "res_work_items",
-        "res_cases",
-        "res_unique_tasks",
-        "res_unique_handoffs",
-        "res_ratio_workitems_global",
-        "res_ratio_workitems_resource",
-        "res_ratio_task_specific",
-        "res_ratio_handoff_specific",
-        "res_work_items_per_min",
-        #"act_freq",
-        #"handoff_freq",
-        "total_time"
-    ]
+    config = load_config()
+    include_case_attr = config.get("include_case_attributes", False)
+    included_inter_case = config.get("included_inter_case", [])
 
     # Load & split
     cases = load_cases(preprocessed_path)
