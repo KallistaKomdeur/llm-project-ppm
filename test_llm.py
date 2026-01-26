@@ -62,7 +62,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
     for run_idx in range(n_runs):
         # Build prompt
-        prompt_text, true_total_time, prefix_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=5)
+        prompt_text, true_total_time, prefix_length, features = fill_prompt(log_name=log_name, configuration=configuration, examples_count=5)
 
         # Optional splitting
         prompt_parts = (
@@ -97,6 +97,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "configuration": configuration,
             "log_name": log_name,
             "prefix_length": prefix_length,
+            "included_features": features,
 
             "prompt_parts": prompt_parts,
             "llm_raw_output": llm_outputs,

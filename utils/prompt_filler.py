@@ -1,14 +1,14 @@
 import json
 import random
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 from utils.data_split import load_cases, temporal_train_test_split
 
 # ======================
 # HELPER FUNCTIONS
 # ======================
-def format_case(case: Dict, configuration: str) -> Dict:
+def format_case(case: Dict, configuration: str, features: List[str]) -> Dict:
     """
     Formats a full case (examples always complete).
     """
@@ -26,7 +26,8 @@ def format_case(case: Dict, configuration: str) -> Dict:
 
     # Determines whether inter-case features are included in the prompt
     elif configuration.startswith("inter-case"):
-        return case
+        filtered = {k: v for k, v in case.items() if k in features or k == "ActTimeSeq"}
+        return filtered
 
     else:
         raise ValueError(f"Unknown configuration: {configuration}")
@@ -80,6 +81,34 @@ def fill_prompt(
     if not prompt_path.exists():
         raise FileNotFoundError(prompt_path)
 
+    # Change this list to select which features to include
+    features = [
+        "timesincemidnight",
+        "weekday",
+        "month",
+        "timesincelastevent",
+        "timesincecasestart",
+        "event_nr",
+        "prev_resource",
+        "ent_act",
+        "ent_case",
+        "ent_handoff",
+        "busyness",
+        "open_cases",
+        "res_work_items",
+        "res_cases",
+        "res_unique_tasks",
+        "res_unique_handoffs",
+        "res_ratio_workitems_global",
+        "res_ratio_workitems_resource",
+        "res_ratio_task_specific",
+        "res_ratio_handoff_specific",
+        "res_work_items_per_min",
+        #"act_freq",
+        #"handoff_freq",
+        "total_time"
+    ]
+
     # Load & split
     cases = load_cases(preprocessed_path)
     train_cases, test_cases = temporal_train_test_split(cases)
@@ -92,7 +121,7 @@ def fill_prompt(
 
     example_blocks = []
     for i, case in enumerate(example_cases, start=1):
-        formatted = format_case(case, configuration)
+        formatted = format_case(case, configuration, features)
         example_blocks.append(
             json.dumps({f"Example_{i}": formatted}, indent=2)
         )
@@ -119,4 +148,4 @@ def fill_prompt(
         .replace("{NEW_CASE}", test_block)
     )
 
-    return filled_prompt, true_total_time, prefix_length
+    return filled_prompt, true_total_time, prefix_length, features

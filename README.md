@@ -50,7 +50,7 @@ The input parameters are:
 
 1. log_name: name of the event log. Can be any of "your_event_log"
 2. provider: name of the LLM provider. Restricted to "gemini", "openai", "anthropic"
-3. configuration: which input configuration to use. Restricted to "single", "inter-case", "single_split"
+3. configuration: which input configuration to use. Restricted to "single_x", "inter-case_x", "single_split_x", where x is any value for which there exists a prompt.
 4. OPTIONAL --model: which model to use from the LLM provider. Default to gemini 2.5-flash
 
 If you want to only see the prompt and not the result, change in "test_llm.py" flag "print_only" to True.
