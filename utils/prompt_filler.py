@@ -8,31 +8,40 @@ from utils.data_split import load_cases, temporal_train_test_split
 # ======================
 # HELPER FUNCTIONS
 # ======================
-def format_case(case: Dict, configuration: str, features: List[str]) -> Dict:
+def format_case(case: Dict, configuration: str, include_case_attr: bool, included_inter_case: List[str]) -> Dict:
     """
     Formats a full case (examples always complete).
     """
+    # Potentially add case attributes
+    result = {}
+    result.update(select_case_attributes(case, include_case_attr))
+    seq = []
 
     # If single variant, only include the activity and time since case start
     if configuration.startswith("single"):
-        seq = []
-        for act, t, _ in case["ActTimeSeq"]:
+        for event in case["ActTimeSeq"]:
+            act, t = event[:2]
             seq.append([act, t])
 
-        return {
-            "ActTimeSeq": seq,
-            "total_time": case["total_time"]
-        }
-
-    # Determines whether inter-case features are included in the prompt
+    # Determines which inter-case features are included in the prompt
     elif configuration.startswith("inter-case"):
-        filtered = {k: v for k, v in case.items() if k in features or k == "ActTimeSeq"}
-        return filtered
+        allowed = set(included_inter_case)
 
-    else:
-        raise ValueError(f"Unknown configuration: {configuration}")
+        for event in case["ActTimeSeq"]:
+            if len(event) == 3:
+                act, t, ef = event
+            else:
+                act, t = event
+                ef = {}
 
-def truncate_case(case: Dict, configuration: str) -> Dict:
+            filtered_ef = {k: v for k, v in ef.items() if k in allowed}
+            seq.append([act, t, filtered_ef])
+
+    result["ActTimeSeq"] = seq
+    result["total_time"] = case["total_time"]
+    return result
+
+def truncate_case(case: Dict) -> Dict:
     """
     Randomly truncates a case and marks total_time as RUNNING.
     """
@@ -42,18 +51,23 @@ def truncate_case(case: Dict, configuration: str) -> Dict:
         raise ValueError("Cannot truncate case with <2 events")
 
     cut_idx = random.randint(1, len(seq) - 1)
-    truncated_seq = seq[:cut_idx]
-
-    if configuration.startswith("single"):
-        truncated_seq = [[act, t] for act, t, _ in truncated_seq]
 
     truncated_case = {
         **case,
-        "ActTimeSeq": truncated_seq,
+        "ActTimeSeq": seq[:cut_idx],
         "total_time": "RUNNING"
     }
 
     return truncated_case, cut_idx
+
+def select_case_attributes(case:Dict, include_case_attr:bool) -> Dict:
+    if include_case_attr:
+        return {
+            k: v for k, v in case.items()
+            if k not in {"ActTimeSeq", "total_time"}
+        }
+    else:
+        return {}
 
 # ======================
 # MAIN FUNCTION
@@ -61,7 +75,7 @@ def truncate_case(case: Dict, configuration: str) -> Dict:
 def fill_prompt(
     log_name: str,
     configuration: str,
-    examples_count: int = 5
+    examples_count: int
 ):
     """
     Fills the prompt template with values. 
@@ -81,8 +95,10 @@ def fill_prompt(
     if not prompt_path.exists():
         raise FileNotFoundError(prompt_path)
 
-    # Change this list to select which features to include
-    features = [
+    # Change this to select which features to include
+    include_case_attr = True
+    
+    included_inter_case = [
         "timesincemidnight",
         "weekday",
         "month",
@@ -121,7 +137,7 @@ def fill_prompt(
 
     example_blocks = []
     for i, case in enumerate(example_cases, start=1):
-        formatted = format_case(case, configuration, features)
+        formatted = format_case(case, configuration, include_case_attr, included_inter_case)
         example_blocks.append(
             json.dumps({f"Example_{i}": formatted}, indent=2)
         )
@@ -132,10 +148,11 @@ def fill_prompt(
     test_case = random.choice(test_cases)
     true_total_time = test_case["total_time"]
 
-    truncated_case, prefix_length = truncate_case(test_case, configuration)
+    truncated_case, prefix_length = truncate_case(test_case)
+    formatted_truncated = format_case(truncated_case, configuration, include_case_attr, included_inter_case)
 
     test_block = json.dumps(
-        {"NEW_CASE": truncated_case},
+        {"NEW_CASE": formatted_truncated},
         indent=2
     )
 
@@ -148,4 +165,4 @@ def fill_prompt(
         .replace("{NEW_CASE}", test_block)
     )
 
-    return filled_prompt, true_total_time, prefix_length, features
+    return filled_prompt, true_total_time, prefix_length, include_case_attr, included_inter_case
