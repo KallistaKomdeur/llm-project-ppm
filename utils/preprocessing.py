@@ -94,39 +94,47 @@ def build_event_features(group, timestamp_col, activity_col):
     Summarizes all previous event features
     """
     group = group.sort_values(timestamp_col)
+    cols = set(group.columns)
 
-    act_freq = group[activity_col].value_counts().to_dict()
-    handoff_freq = group["prev_resource"].value_counts().to_dict()
+    act_freq = (group[activity_col].value_counts().to_dict() if activity_col in cols else {})
+    handoff_freq = (group["prev_resource"].value_counts().to_dict() if "prev_resource" in cols else {})
 
     seq = []
     for _, row in group.iterrows():
-        event_features = {
-            "timesincemidnight": row["timesincemidnight"],
-            "weekday": row["weekday"],
-            "month": row["month"],
-            "timesincelastevent": row["timesincelastevent"],
-            "timesincecasestart": row["timesincecasestart"],
-            "event_nr": row["event_nr"],
-            "prev_resource": row["prev_resource"],
-            "ent_act": row["ent_act"],
-            "ent_case": row["ent_case"],
-            "ent_handoff": row["ent_handoff"],
-            "busyness": row["busyness"],
-            "open_cases": row["open_cases"],
-            "act_freq": act_freq,
-            "handoff_freq": handoff_freq,
-            "res_work_items": row["res_work_items"],
-            "res_cases": row["res_cases"],
-            "res_unique_tasks": row["res_unique_tasks"],
-            "res_unique_handoffs": row["res_unique_handoffs"],
-            "res_ratio_workitems_global": row["res_ratio_workitems_global"],
-            "res_ratio_workitems_resource": row["res_ratio_workitems_resource"],
-            "res_ratio_task_specific": row["res_ratio_task_specific"],
-            "res_ratio_handoff_specific": row["res_ratio_handoff_specific"],
-            "res_work_items_per_min": row["res_work_items_per_min"],
-        }
+        event_features = {}
 
-        seq.append([row[activity_col], row["timesincecasestart"], event_features])
+        def add(k):
+            if k in cols:
+                event_features[k] = row[k]
+
+        add("timesincemidnight")
+        add("weekday")
+        add("month")
+        add("timesincelastevent")
+        add("timesincecasestart")
+        add("event_nr")
+        add("prev_resource")
+        add("ent_act")
+        add("ent_case")
+        add("ent_handoff")
+        add("busyness")
+        add("open_cases")
+        add("res_work_items")
+        add("res_cases")
+        add("res_unique_tasks")
+        add("res_unique_handoffs")
+        add("res_ratio_workitems_global")
+        add("res_ratio_workitems_resource")
+        add("res_ratio_task_specific")
+        add("res_ratio_handoff_specific")
+        add("res_work_items_per_min")
+
+        if act_freq:
+            event_features["act_freq"] = act_freq
+        if handoff_freq:
+            event_features["handoff_freq"] = handoff_freq
+
+        seq.append([row[activity_col], row["timesincecasestart"] if "timesincecasestart" in cols else 0, event_features])
 
     return seq
 
@@ -164,71 +172,82 @@ def preprocess_log(log_name: str):
         raise FileNotFoundError(f"Log not found: {input_file}")
 
     data = pd.read_csv(input_file, encoding="latin-1")
-    data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
+
+    available_cols = set(data.columns)
+    has_ts = timestamp_col in available_cols
+    has_res = resource_col in available_cols
+    has_act = activity_col in available_cols
 
     # Timestamp features
-    data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
-    data["weekday"] = data[timestamp_col].dt.weekday
-    data["month"] = data[timestamp_col].dt.month
+    if has_ts:
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
 
-    data = data.groupby(case_id_col).apply(lambda g: extract_timestamp_features(g, timestamp_col)).reset_index(drop=True)
-    data = data.groupby(case_id_col).apply(lambda g: get_prev_resource(g, resource_col))
+        data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
+        data["weekday"] = data[timestamp_col].dt.weekday
+        data["month"] = data[timestamp_col].dt.month
+
+        data = data.groupby(case_id_col).apply(lambda g: extract_timestamp_features(g, timestamp_col)).reset_index(drop=True)
+
+    # Previous resource
+    if has_res:    
+        data = data.groupby(case_id_col).apply(lambda g: get_prev_resource(g, resource_col))
 
     # Resource experience
-    data = data.sort_values(timestamp_col)
-    data = data.groupby(resource_col).apply(lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col)).reset_index(drop=True)
+    if has_res and has_act and has_ts:
+        data = data.sort_values(timestamp_col)
+        data = data.groupby(resource_col).apply(lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col)).reset_index(drop=True)
 
     # Open cases
-    case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
-    data["open_cases"] = data[timestamp_col].apply(
-        lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum()
-    )
+    if has_ts:
+        case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
+        data["open_cases"] = data[timestamp_col].apply(lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum())
 
-    # Workload windows
-    data = data.join(compute_workload_windows(data, WORKLOAD_WINDOWS, case_id_col, timestamp_col))
+        # Workload windows
+        data = data.join(compute_workload_windows(data, WORKLOAD_WINDOWS, case_id_col, timestamp_col))
 
     # Resource-level stats
-    resource_stats = defaultdict(lambda: {
-        "work_items": 0,
-        "cases": set(),
-        "tasks": defaultdict(int),
-        "handoffs": defaultdict(int),
-        "handoff_set": set(),
-        "first_ts": None
-    })
+    if has_res and has_act and has_ts:
+        resource_stats = defaultdict(lambda: {
+            "work_items": 0,
+            "cases": set(),
+            "tasks": defaultdict(int),
+            "handoffs": defaultdict(int),
+            "handoff_set": set(),
+            "first_ts": None
+        })
 
-    global_cases_seen = set()
-    data = data.sort_values(timestamp_col).reset_index(drop=True)
+        global_cases_seen = set()
+        data = data.sort_values(timestamp_col).reset_index(drop=True)
 
-    for i, row in data.iterrows():
-        res = row[resource_col]
-        cid = row[case_id_col]
-        act = row[activity_col]
-        ho = row["prev_resource"]
-        ts = row[timestamp_col]
+        for i, row in data.iterrows():
+            res = row[resource_col]
+            cid = row[case_id_col]
+            act = row[activity_col]
+            ho = row["prev_resource"]
+            ts = row[timestamp_col]
 
-        global_cases_seen.add(cid)
-        st = resource_stats[res]
+            global_cases_seen.add(cid)
+            st = resource_stats[res]
 
-        st["work_items"] += 1
-        st["cases"].add(cid)
-        st["tasks"][act] += 1
-        st["handoffs"][ho] += 1
-        st["handoff_set"].add(ho)
-        st["first_ts"] = st["first_ts"] or ts
+            st["work_items"] += 1
+            st["cases"].add(cid)
+            st["tasks"][act] += 1
+            st["handoffs"][ho] += 1
+            st["handoff_set"].add(ho)
+            st["first_ts"] = st["first_ts"] or ts
 
-        n = st["work_items"]
-        duration = (ts - st["first_ts"]).total_seconds() / 60
+            n = st["work_items"]
+            duration = (ts - st["first_ts"]).total_seconds() / 60
 
-        data.loc[i, "res_work_items"] = n
-        data.loc[i, "res_cases"] = len(st["cases"])
-        data.loc[i, "res_unique_tasks"] = len(st["tasks"])
-        data.loc[i, "res_unique_handoffs"] = len(st["handoff_set"])
-        data.loc[i, "res_ratio_workitems_global"] = n / len(global_cases_seen)
-        data.loc[i, "res_ratio_workitems_resource"] = n / len(st["cases"])
-        data.loc[i, "res_ratio_task_specific"] = st["tasks"][act] / n
-        data.loc[i, "res_ratio_handoff_specific"] = st["handoffs"][ho] / n
-        data.loc[i, "res_work_items_per_min"] = n / duration if duration > 0 else 0
+            data.loc[i, "res_work_items"] = n
+            data.loc[i, "res_cases"] = len(st["cases"])
+            data.loc[i, "res_unique_tasks"] = len(st["tasks"])
+            data.loc[i, "res_unique_handoffs"] = len(st["handoff_set"])
+            data.loc[i, "res_ratio_workitems_global"] = n / len(global_cases_seen)
+            data.loc[i, "res_ratio_workitems_resource"] = n / len(st["cases"])
+            data.loc[i, "res_ratio_task_specific"] = st["tasks"][act] / n
+            data.loc[i, "res_ratio_handoff_specific"] = st["handoffs"][ho] / n
+            data.loc[i, "res_work_items_per_min"] = n / duration if duration > 0 else 0
 
     # Detect case attributes
     case_attr_cols = [
@@ -240,13 +259,13 @@ def preprocess_log(log_name: str):
     # Build output
     output = []
     for cid, group in data.groupby(case_id_col):
-        total_time = (group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60
+        total_time = ((group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60 if has_ts else 0)
         case_attrs = {c: group[c].iloc[0] for c in case_attr_cols}
 
         output.append({
             case_id_col: cid,
             **case_attrs,
-            "ActTimeSeq": build_event_features(group, timestamp_col, activity_col),
+            "ActTimeSeq": (build_event_features(group, timestamp_col, activity_col) if has_act else []),
             "total_time": total_time
         })
 
