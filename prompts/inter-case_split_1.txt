@@ -1,3 +1,6 @@
+You will receive context in multiple parts.
+Do not answer until you see ===FINAL QUERY===.
+
 You are an expert in process mining and machine learning. Your task is to predict the 'lead time' of process instances based on event logs of activities, as each process instance is a sequence of activities.
 
 A event log is a collection of traces, where each trace represents a process instance. Each trace is mapped as a sequence of activities and integers representing the minutes since the start of the process, and a list of inter-case features to describe the system state.
@@ -6,12 +9,15 @@ The log is represented as a python dictionary containing one dictionary for each
 - keys representing global trace attributes
 - events describing the activity, system state, and time taken. 
 
+===PART:EXAMPLES===
 Below are completed example cases:
 {EXAMPLES}
 
+===PART:NEW_CASE===
 Now predict the total time for the following uncompleted case (still running):
 {NEW_CASE}
 
+===FINAL QUERY===
 All interactions will be structured in the following way, with the appropriate values filled in.
 
 [[ ## answer ## ]]
