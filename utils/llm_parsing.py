@@ -11,6 +11,7 @@ def parse_llm_output(text: str) -> tuple[str | None, float | None]:
     reasoning = None
     answer = None
 
+    '''
     reasoning_match = re.search(
         r"\[\[\s*## reasoning ##\s*\]\](.*?)\[\[\s*## answer ##\s*\]\]",
         text,
@@ -19,6 +20,7 @@ def parse_llm_output(text: str) -> tuple[str | None, float | None]:
 
     if reasoning_match:
         reasoning = reasoning_match.group(1).strip()
+    '''
 
     answer_match = re.search(
         r"\[\[\s*## answer ##\s*\]\]\s*([0-9]+(?:\.[0-9]+)?)",
