@@ -1,0 +1,6 @@
+log_name: bpic2012
+columns:
+  case_id: case
+  activity: event
+  resource: org:resource
+  timestamp: completeTime
