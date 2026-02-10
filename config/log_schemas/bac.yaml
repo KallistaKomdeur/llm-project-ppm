@@ -5,5 +5,5 @@ columns:
   activity: ACTIVITY
   timestamp: END_DATE
 case_attributes:
-  - CLOSURE_TYPE
-  - CLOSURE_REASON
+  CLOSURE_TYPE: the type of account closure
+  CLOSURE_REASON: the reason why the account was closed

@@ -6,4 +6,4 @@ columns:
   resource: org:resource
   timestamp: completeTime
 case_attributes:
-  - AMOUNT_REQ
+  AMOUNT_REQ: the requested loan amount

@@ -6,5 +6,5 @@ columns:
   resource: org:resource
   timestamp: time
 case_attributes:
-  - LoanGoal
-  - RequestedAmount
+  LoanGoal: the reason for requesting the loan
+  RequestedAmount: the requested loan amount
