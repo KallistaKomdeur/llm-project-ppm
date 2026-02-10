@@ -1,4 +1,3 @@
-# utils/prompt_config.py
 from pathlib import Path
 import yaml
 
