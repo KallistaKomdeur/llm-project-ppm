@@ -1,6 +1,0 @@
-log_name: mip
-columns:
-  case_id: case
-  activity: activity
-  resource: resource
-  timestamp: timestamp

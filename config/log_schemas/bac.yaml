@@ -1,0 +1,9 @@
+log_name: bac
+log_description: The process is an excerpt of the database of an Italian bank institution that deals with the closures of bank accounts.
+columns:
+  case_id: REQUEST_ID
+  activity: ACTIVITY
+  timestamp: END_DATE
+case_attributes:
+  - CLOSURE_TYPE
+  - CLOSURE_REASON

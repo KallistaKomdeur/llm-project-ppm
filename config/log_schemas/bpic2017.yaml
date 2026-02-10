@@ -1,0 +1,10 @@
+log_name: bpic2017
+log_description: The considered process deals with the loan application process from a Dutch financial institution. It has been provided in the Business Process Intelligence (BPI) challenge in 2017.
+columns:
+  case_id: case
+  activity: event
+  resource: org:resource
+  timestamp: time
+case_attributes:
+  - LoanGoal
+  - RequestedAmount
