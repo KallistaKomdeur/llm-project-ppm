@@ -31,7 +31,6 @@ def ensure_preprocessed(log_name: str) -> Path:
 def get_results_path(configuration: str, log_name: str, provider: str) -> Path:
     """
     Returns the JSONL file where query logs are appended.
-    Each run is stored in a new file: run_1.jsonl, run_2.jsonl, etc.
     """
     results_dir = BASE_DIR / "results" / configuration / log_name / provider
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +59,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
     for run_idx in range(n_runs):
         # Build prompt
-        prompt_text, true_total_time, prefix_length, include_case_attr, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count)
+        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count)
 
         # Optional splitting
         prompt_parts = (
@@ -85,7 +84,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
         
         final_output = llm_outputs[-1]
         # Parse response
-        reasoning, answer = parse_llm_output(final_output)
+        answer = parse_llm_output(final_output)
 
         # Build log record
         record = {
@@ -96,12 +95,12 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "log_name": log_name,
             "prefix_length": prefix_length,
             "case_attributes_included": include_case_attr,
+            "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
 
             "prompt_parts": prompt_parts,
             "llm_raw_output": llm_outputs,
 
-            #"llm_reasoning": reasoning,
             "llm_answer": answer,
 
             "actual_case_duration": true_total_time
