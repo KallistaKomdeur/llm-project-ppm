@@ -7,11 +7,13 @@ SCHEMA_DIR = ROOT / "config" / "log_schemas"
 class LogSchema:
     def __init__(self, schema_dict: dict):
         self.log_name = schema_dict["log_name"]
+        self.log_description = schema_dict["log_description"]
         cols = schema_dict["columns"]
         self.case_id = cols["case_id"]          # mandatory
         self.activity = cols["activity"]        # mandatory
         self.resource = cols.get("resource")    # optional
         self.timestamp = cols.get("timestamp")  # optional
+        self.case_attributes = schema_dict.get("case_attributes", [])
 
 def load_log_schema(log_name: str) -> LogSchema:
     path = SCHEMA_DIR / f"{log_name}.yaml"
