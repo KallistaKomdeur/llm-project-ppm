@@ -5,23 +5,22 @@ from typing import Dict, List
 
 from utils.data_split import load_cases, temporal_train_test_split
 from utils.load_config import load_config
+from utils.log_schema import load_log_schema
 
 # ======================
 # HELPER FUNCTIONS
 # ======================
-def format_case(case: Dict, configuration: str, include_case_attr: bool, included_inter_case: List[str]) -> Dict:
+def format_case(case: Dict, configuration: str, include_case_attr: bool, included_inter_case: List[str], case_attr_keys: List[str]) -> Dict:
     """
     Formats a full case.
     """
     # Potentially add case attributes
-    result = {}
-    result.update(select_case_attributes(case, include_case_attr))
+    result = get_case_attributes(case, include_case_attr, case_attr_keys)
     seq = []
 
     # If single variant, only include the activity and time since case start
     if configuration.startswith("single"):
-        for event in case["ActTimeSeq"]:
-            act, t = event[:2]
+        for act, t, *_ in case["ActTimeSeq"]:
             seq.append([act, t])
 
     # Determines which inter-case features are included in the prompt
@@ -29,14 +28,9 @@ def format_case(case: Dict, configuration: str, include_case_attr: bool, include
         allowed = set(included_inter_case)
 
         for event in case["ActTimeSeq"]:
-            if len(event) == 3:
-                act, t, ef = event
-            else:
-                act, t = event
-                ef = {}
-
-            filtered_ef = {k: v for k, v in ef.items() if k in allowed}
-            seq.append([act, t, filtered_ef])
+            act, t = event[:2]
+            ef = event[2] if len(event) == 3 else {}
+            seq.append([act, t, {k: v for k, v in ef.items() if k in allowed}])
 
     result["ActTimeSeq"] = seq
     result["total_time"] = case["total_time"]
@@ -44,7 +38,7 @@ def format_case(case: Dict, configuration: str, include_case_attr: bool, include
 
 def truncate_case(case: Dict) -> Dict:
     """
-    Randomly truncates a case and marks total_time as RUNNING.
+    Randomly truncates a case and marks total_time as Running.
     """
 
     seq = case["ActTimeSeq"]
@@ -56,22 +50,23 @@ def truncate_case(case: Dict) -> Dict:
     truncated_case = {
         **case,
         "ActTimeSeq": seq[:cut_idx],
-        "total_time": "RUNNING"
+        "total_time": "Running"
     }
 
     return truncated_case, cut_idx
 
-def select_case_attributes(case:Dict, include_case_attr:bool) -> Dict:
+def get_case_attributes(case: Dict, include_case_attr: bool, case_attribute_keys: List[str]) -> Dict:
     """
-    Adds all or none of the case attributes depending on boolean. 
+    Adds schema-defined case attributes depending on boolean.
     """
-    if include_case_attr:
-        return {
-            k: v for k, v in case.items()
-            if k not in {"ActTimeSeq", "total_time"}
-        }
-    else:
+    if not include_case_attr:
         return {}
+
+    return {
+        k: case[k]
+        for k in case_attribute_keys
+        if k in case
+    }
 
 # ======================
 # MAIN FUNCTION
@@ -97,10 +92,25 @@ def fill_prompt(
     if not prompt_path.exists():
         raise FileNotFoundError(prompt_path)
 
-    # Change this to select which features to include
     config = load_config()
     include_case_attr = config.get("include_case_attributes", False)
     included_inter_case = config.get("included_inter_case", [])
+    include_log_info = config.get("include_log_info", False)
+
+    # Optionally collect log information
+    case_attr_expl = ""
+    process_context = ""
+
+    schema = load_log_schema(log_name) 
+    case_attrs = schema.case_attributes
+
+    # Case attribute explanations
+    if include_log_info:
+        
+        case_attr_expl = "\n".join(f"- the key \"{k}\", which value is {v}" for k, v in case_attrs.items())
+
+        # Process context
+        process_context = schema.log_description or ""
 
     # Load & split
     cases = load_cases(preprocessed_path)
@@ -113,25 +123,24 @@ def fill_prompt(
     example_cases = random.sample(train_cases, examples_count)
 
     example_blocks = []
+    case_attr_keys = list(case_attrs)
+
     for i, case in enumerate(example_cases, start=1):
-        formatted = format_case(case, configuration, include_case_attr, included_inter_case)
+        formatted = format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys)
         example_blocks.append(
-            json.dumps({f"Example_{i}": formatted}, indent=2)
+            json.dumps(formatted, separators=(", ", ": "))
         )
 
     examples_str = "\n\n".join(example_blocks)
 
     # Sample prediction case from TEST
     test_case = random.choice(test_cases)
+    prefix_length = len(test_case["ActTimeSeq"])
     true_total_time = test_case["total_time"]
 
-    truncated_case, prefix_length = truncate_case(test_case)
-    formatted_truncated = format_case(truncated_case, configuration, include_case_attr, included_inter_case)
+    formatted_truncated = format_case(test_case, configuration, include_case_attr, included_inter_case, case_attr_keys)
 
-    test_block = json.dumps(
-        {"NEW_CASE": formatted_truncated},
-        indent=2
-    )
+    test_block = json.dumps(formatted_truncated, separators=(", ", ": "))
 
     # Fill template
     template = prompt_path.read_text(encoding="utf-8")
@@ -140,6 +149,8 @@ def fill_prompt(
         template
         .replace("{EXAMPLES}", examples_str)
         .replace("{NEW_CASE}", test_block)
+        .replace("{CASE_ATTRIBUTE_EXPLANATIONS}", case_attr_expl)
+        .replace("{PROCESS_CONTEXT}", process_context)
     )
 
-    return filled_prompt, true_total_time, prefix_length, include_case_attr, included_inter_case
+    return filled_prompt, true_total_time, prefix_length, include_case_attr, include_log_info, included_inter_case
