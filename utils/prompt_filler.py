@@ -136,7 +136,7 @@ def fill_prompt(
     # Sample prediction case from TEST
     test_case = random.choice(test_cases)
     prefix_length = len(test_case["ActTimeSeq"])
-    true_total_time = test_case["total_time"]
+    true_total_time = test_case["true_total_time"]
 
     formatted_truncated = format_case(test_case, configuration, include_case_attr, included_inter_case, case_attr_keys)
 

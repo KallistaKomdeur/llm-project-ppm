@@ -93,17 +93,16 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "model": model,
             "configuration": configuration,
             "log_name": log_name,
+            "llm_answer": answer,
+            "actual_case_duration": true_total_time, 
+
             "prefix_length": prefix_length,
             "case_attributes_included": include_case_attr,
             "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
 
             "prompt_parts": prompt_parts,
-            "llm_raw_output": llm_outputs,
-
-            "llm_answer": answer,
-
-            "actual_case_duration": true_total_time
+            "llm_raw_output": llm_outputs
         }
 
         # Append to JSONL
