@@ -1,16 +1,14 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
+from scipy import stats
 from pathlib import Path
 import json
 from utils.log_schema import load_log_schema
 
-WORKLOAD_WINDOWS = [60, 240, 1440]  # minutes
-
 # ======================
 # FEATURE FUNCTIONS
 # ======================
-
 def extract_timestamp_features(group, timestamp_col):
     group = group.sort_values(timestamp_col, ascending=False, kind="mergesort")
 
@@ -25,49 +23,81 @@ def extract_timestamp_features(group, timestamp_col):
 
     return group
 
+def ent(data, col):
+    p = data[col].value_counts(normalize=True)
+    return stats.entropy(p)
 
 def get_prev_resource(group, resource_col):
-    group = group.sort_values(group.columns[0])
     group["prev_resource"] = group[resource_col].shift(1).fillna("first")
     return group
 
+def extract_resource_experience(group, case_id_col, activity_col, timestamp_col):
+    group = group.reset_index(drop=True)
+
+    for i in range(len(group)):
+        hist = group.iloc[: i + 1]
+
+        group.loc[i, "ent_act"] = ent(hist, activity_col)
+        group.loc[i, "ent_case"] = ent(hist, case_id_col)
+        group.loc[i, "ent_handoff"] = ent(hist, "prev_resource")
+
+        minutes = (hist[timestamp_col].max() - hist[timestamp_col].min()).total_seconds() / 60
+        # Busyness = tasks per minute
+        if minutes > 0:
+            group.loc[i, "busyness"] = len(hist) / minutes
+        else:
+            # For the very first event, we can't calculate busyness yet
+            group.loc[i, "busyness"] = 0.0
+
+    return group
 
 def build_event_features(group, timestamp_col, activity_col):
-    group = group.sort_values(timestamp_col)
+    group = group.sort_values(timestamp_col).reset_index(drop=True)
     cols = set(group.columns)
 
-    act_freq = group[activity_col].value_counts().to_dict() if activity_col in cols else {}
-    handoff_freq = group["prev_resource"].value_counts().to_dict() if "prev_resource" in cols else {}
-
     seq = []
-
-    for _, row in group.iterrows():
+    for idx, row in group.iterrows():
         event_features = {}
 
-        for k in [
-            "timesincemidnight","weekday","month","timesincelastevent","timesincecasestart",
-            "event_nr","prev_resource","ent_act","ent_case","ent_handoff","busyness",
-            "open_cases","res_work_items","res_cases","res_unique_tasks",
-            "res_unique_handoffs","res_ratio_workitems_global",
-            "res_ratio_workitems_resource","res_ratio_task_specific",
-            "res_ratio_handoff_specific","res_work_items_per_min"
-        ]:
+        def add(k):
             if k in cols:
                 event_features[k] = row[k]
 
-        if act_freq:
+        add("timesincemidnight")
+        add("weekday")
+        add("month")
+        add("timesincelastevent")
+        add("timesincecasestart")
+        add("event_nr")
+        add("prev_resource")
+        add("ent_act")
+        add("ent_case")
+        add("ent_handoff")
+        add("busyness")
+        add("open_cases")
+        add("res_work_items")
+        add("res_cases")
+        add("res_unique_tasks")
+        add("res_unique_handoffs")
+        add("res_ratio_workitems_global")
+        add("res_ratio_workitems_resource")
+        add("res_ratio_task_specific")
+        add("res_ratio_handoff_specific")
+        add("res_work_items_per_min")
+
+        historical_data = group.iloc[:idx + 1]
+        
+        if activity_col in cols:
+            act_freq = historical_data[activity_col].value_counts().to_dict()
             event_features["act_freq"] = act_freq
-        if handoff_freq:
+        
+        if "prev_resource" in cols:
+            handoff_freq = historical_data["prev_resource"].value_counts().to_dict()
             event_features["handoff_freq"] = handoff_freq
 
-        seq.append([
-            row[activity_col],
-            row.get("timesincecasestart", 0),
-            event_features
-        ])
+        seq.append([row[activity_col], row["timesincecasestart"] if "timesincecasestart" in cols else 0, event_features])
 
     return seq
-
 
 def safe_convert(obj):
     if isinstance(obj, np.generic):
@@ -76,27 +106,10 @@ def safe_convert(obj):
         return obj.tolist()
     return obj
 
-
-def compute_workload_windows(df, windows, case_id_col, timestamp_col):
-    starts = df.groupby(case_id_col)[timestamp_col].min()
-    ends = df.groupby(case_id_col)[timestamp_col].max()
-
-    def workload_at(t, w):
-        start_cutoff = t - pd.Timedelta(minutes=w)
-        return ((starts <= t) & (ends > start_cutoff)).sum()
-
-    return pd.DataFrame({
-        f"open_cases_{w}min": df[timestamp_col].apply(lambda x: workload_at(x, w))
-        for w in windows
-    })
-
-
 # ======================
 # MAIN FUNCTION
 # ======================
-
 def preprocess_log(log_name: str):
-
     schema = load_log_schema(log_name)
     case_id_col = schema.case_id
     activity_col = schema.activity
@@ -108,175 +121,146 @@ def preprocess_log(log_name: str):
     input_file = log_dir / f"{log_name}.csv"
     output_file = log_dir / f"{log_name}_preprocessed.jsonl"
 
-    data = pd.read_csv(input_file, encoding="latin-1")
+    if not input_file.exists():
+        raise FileNotFoundError(f"Log not found: {input_file}")
 
-    # ======================
-    # Timestamp features
-    # ======================
-    if timestamp_col in data.columns:
+    original_data = pd.read_csv(input_file, encoding="latin-1")
+
+    available_cols = set(original_data.columns)
+    has_ts = timestamp_col in available_cols
+    has_res = resource_col in available_cols
+    has_act = activity_col in available_cols
+
+    data = original_data.copy()
+
+    if has_ts:
         data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
-
-        data["timesincemidnight"] = (
-            data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
-        )
+        data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
         data["weekday"] = data[timestamp_col].dt.weekday
         data["month"] = data[timestamp_col].dt.month
 
-        data = pd.concat(
-            [extract_timestamp_features(g, timestamp_col)
-             for _, g in data.groupby(case_id_col)],
-            ignore_index=True
+        ts_data = data.copy()
+        ts_features = ts_data.groupby(case_id_col, group_keys=False).apply(
+            lambda g: extract_timestamp_features(g, timestamp_col)
+        )
+        
+        for col in ["timesincelastevent", "timesincecasestart", "event_nr"]:
+            data[col] = ts_features[col].values
+
+    if has_res:
+        prev_res_data = data.copy()
+        prev_res_features = prev_res_data.groupby(case_id_col, group_keys=False).apply(
+            lambda g: get_prev_resource(g, resource_col)
+        )
+        data["prev_resource"] = prev_res_features["prev_resource"].values
+
+    if has_res and has_act and has_ts:
+        data['_row_id'] = range(len(data))
+    
+        res_exp_data = data.copy().sort_values(timestamp_col)
+        res_exp_features = res_exp_data.groupby(resource_col, group_keys=False).apply(
+            lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col)
+        )
+    
+        data = data.merge(
+            res_exp_features[["_row_id", "ent_act", "ent_case", "ent_handoff", "busyness"]], 
+            on="_row_id", 
+            how="left",
+            suffixes=('', '_new')
         )
 
-    # ======================
-    # Previous resource
-    # ======================
-    if resource_col in data.columns:
-        data = pd.concat(
-            [get_prev_resource(g, resource_col)
-             for _, g in data.groupby(case_id_col)],
-            ignore_index=True
+    if has_ts:
+        case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
+        data["open_cases"] = data[timestamp_col].apply(
+            lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum()
         )
 
-    # ======================
-    # FAST RESOURCE EXPERIENCE (O(N))
-    # ======================
-    if (
-        resource_col in data.columns
-        and activity_col in data.columns
-        and timestamp_col in data.columns
-    ):
-
-        data = data.sort_values(timestamp_col).reset_index(drop=True)
-
-        int_cols = [
-            "res_work_items","res_cases","res_unique_tasks",
-            "res_unique_handoffs"
-        ]
-
-        float_cols = [
-            "res_ratio_workitems_global","res_ratio_workitems_resource",
-            "res_ratio_task_specific","res_ratio_handoff_specific",
-            "res_work_items_per_min","ent_act","ent_case",
-            "ent_handoff","busyness"
-        ]
-
-        for col in int_cols:
-            data[col] = 0
-        for col in float_cols:
-            data[col] = 0.0
+    if has_res and has_act and has_ts:
+        if '_row_id' not in data.columns:
+            data['_row_id'] = range(len(data))
+        
+        resource_stats = defaultdict(lambda: {
+            "work_items": 0, "cases": set(), "tasks": defaultdict(int),
+            "handoffs": defaultdict(int), "handoff_set": set(), "first_ts": None
+        })
 
         global_cases_seen = set()
+        sorted_data = data.sort_values(timestamp_col).copy()
+        
+        res_stats_cols = {
+            "res_work_items": [], "res_cases": [], "res_unique_tasks": [],
+            "res_unique_handoffs": [], "res_ratio_workitems_global": [],
+            "res_ratio_workitems_resource": [], "res_ratio_task_specific": [],
+            "res_ratio_handoff_specific": [], "res_work_items_per_min": []
+        }
 
-        for res, g in data.groupby(resource_col, sort=False):
+        for i, row in sorted_data.iterrows():
+            res = row[resource_col]
+            cid = row[case_id_col]
+            act = row[activity_col]
+            ho = row["prev_resource"]
+            ts = row[timestamp_col]
 
-            tasks = defaultdict(int)
-            cases = set()
-            handoffs = defaultdict(int)
-            handoff_set = set()
-            first_ts = None
-            total = 0
+            global_cases_seen.add(cid)
+            st = resource_stats[res]
+            st["work_items"] += 1
+            st["cases"].add(cid)
+            st["tasks"][act] += 1
+            st["handoffs"][ho] += 1
+            st["handoff_set"].add(ho)
+            st["first_ts"] = st["first_ts"] or ts
 
-            for idx in g.index:
+            n = st["work_items"]
+            duration = (ts - st["first_ts"]).total_seconds() / 60
 
-                row = data.loc[idx]
+            res_stats_cols["res_work_items"].append(n)
+            res_stats_cols["res_cases"].append(len(st["cases"]))
+            res_stats_cols["res_unique_tasks"].append(len(st["tasks"]))
+            res_stats_cols["res_unique_handoffs"].append(len(st["handoff_set"]))
+            res_stats_cols["res_ratio_workitems_global"].append(n / len(global_cases_seen))
+            res_stats_cols["res_ratio_workitems_resource"].append(n / len(st["cases"]))
+            res_stats_cols["res_ratio_task_specific"].append(st["tasks"][act] / n)
+            res_stats_cols["res_ratio_handoff_specific"].append(st["handoffs"][ho] / n)
+            res_stats_cols["res_work_items_per_min"].append(n / duration if duration > 0 else 0)
 
-                cid = row[case_id_col]
-                act = row[activity_col]
-                ho = row["prev_resource"]
-                ts = row[timestamp_col]
-
-                total += 1
-                global_cases_seen.add(cid)
-
-                cases.add(cid)
-                tasks[act] += 1
-                handoffs[ho] += 1
-                handoff_set.add(ho)
-
-                if first_ts is None:
-                    first_ts = ts
-
-                duration = (ts - first_ts).total_seconds() / 60
-
-                # entropy from counts
-                def entropy_from_counts(counter):
-                    n = sum(counter.values())
-                    if n <= 1:
-                        return 0.0
-                    probs = np.array(list(counter.values())) / n
-                    return float(-(probs * np.log(probs)).sum())
-
-                data.at[idx, "res_work_items"] = total
-                data.at[idx, "res_cases"] = len(cases)
-                data.at[idx, "res_unique_tasks"] = len(tasks)
-                data.at[idx, "res_unique_handoffs"] = len(handoff_set)
-
-                data.at[idx, "res_ratio_workitems_global"] = total / len(global_cases_seen)
-                data.at[idx, "res_ratio_workitems_resource"] = total / len(cases)
-                data.at[idx, "res_ratio_task_specific"] = tasks[act] / total
-                data.at[idx, "res_ratio_handoff_specific"] = handoffs[ho] / total
-                data.at[idx, "res_work_items_per_min"] = (
-                    total / duration if duration > 0 else 0.0
-                )
-
-                data.at[idx, "ent_act"] = entropy_from_counts(tasks)
-                data.at[idx, "ent_case"] = entropy_from_counts({c: 1 for c in cases})
-                data.at[idx, "ent_handoff"] = entropy_from_counts(handoffs)
-
-                days = (ts - first_ts).days
-                data.at[idx, "busyness"] = total / days if days > 0 else 0.0
-
-    # ======================
-    # Workload
-    # ======================
-    if timestamp_col in data.columns:
-        case_windows = data.groupby(case_id_col)[timestamp_col].agg(
-            start="min", end="max"
+        for col_name, col_values in res_stats_cols.items():
+            sorted_data[col_name] = col_values
+        
+        data = data.merge(
+            sorted_data[["_row_id"] + list(res_stats_cols.keys())],
+            on="_row_id", 
+            how="left",
+            suffixes=('', '_new')
         )
 
-        data["open_cases"] = data[timestamp_col].apply(
-            lambda t: ((case_windows["start"] <= t) &
-                       (case_windows["end"] > t)).sum()
-        )
+    if '_row_id' in data.columns:
+        data = data.drop('_row_id', axis=1)
 
-        data = pd.concat(
-            [data, compute_workload_windows(
-                data, WORKLOAD_WINDOWS, case_id_col, timestamp_col)],
-            axis=1
-        )
+    event_level_features = [
+        "timesincemidnight", "weekday", "month", "timesincelastevent", 
+        "timesincecasestart", "event_nr", "prev_resource", "ent_act", 
+        "ent_case", "ent_handoff", "busyness", "open_cases",
+        "res_work_items", "res_cases", "res_unique_tasks", 
+        "res_unique_handoffs", "res_ratio_workitems_global", 
+        "res_ratio_workitems_resource", "res_ratio_task_specific", 
+        "res_ratio_handoff_specific", "res_work_items_per_min"
+    ]
 
-    # ======================
-    # Case attributes
-    # ======================
     case_attr_cols = [
         c for c in data.columns
-        if c not in [case_id_col, activity_col,
-                     resource_col, timestamp_col]
+        if c not in [case_id_col, activity_col, resource_col, timestamp_col]
+        and c not in event_level_features
         and data.groupby(case_id_col)[c].nunique().max() == 1
     ]
 
-    # ======================
-    # Build JSON
-    # ======================
     output = []
-
     for cid, group in data.groupby(case_id_col):
-
-        total_time = (
-            (group[timestamp_col].max()
-             - group[timestamp_col].min()).total_seconds() / 60
-            if timestamp_col in group.columns else 0
-        )
-
+        total_time = ((group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60 if has_ts else 0)
         case_attrs = {c: group[c].iloc[0] for c in case_attr_cols}
-
         output.append({
             case_id_col: cid,
             **case_attrs,
-            "ActTimeSeq": build_event_features(
-                group, timestamp_col, activity_col
-            ) if activity_col in group.columns else [],
+            "ActTimeSeq": (build_event_features(group, timestamp_col, activity_col) if has_act else []),
             "total_time": total_time
         })
 
