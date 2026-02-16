@@ -115,6 +115,7 @@ def preprocess_log(log_name: str):
     activity_col = schema.activity
     resource_col = schema.resource
     timestamp_col = schema.timestamp
+    case_attr_cols = schema.case_attributes
 
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
@@ -235,23 +236,6 @@ def preprocess_log(log_name: str):
 
     if '_row_id' in data.columns:
         data = data.drop('_row_id', axis=1)
-
-    event_level_features = [
-        "timesincemidnight", "weekday", "month", "timesincelastevent", 
-        "timesincecasestart", "event_nr", "prev_resource", "ent_act", 
-        "ent_case", "ent_handoff", "busyness", "open_cases",
-        "res_work_items", "res_cases", "res_unique_tasks", 
-        "res_unique_handoffs", "res_ratio_workitems_global", 
-        "res_ratio_workitems_resource", "res_ratio_task_specific", 
-        "res_ratio_handoff_specific", "res_work_items_per_min"
-    ]
-
-    case_attr_cols = [
-        c for c in data.columns
-        if c not in [case_id_col, activity_col, resource_col, timestamp_col]
-        and c not in event_level_features
-        and data.groupby(case_id_col)[c].nunique().max() == 1
-    ]
 
     output = []
     for cid, group in data.groupby(case_id_col):
