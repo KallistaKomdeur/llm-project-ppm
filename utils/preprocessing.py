@@ -33,21 +33,27 @@ def get_prev_resource(group, resource_col):
 
 def extract_resource_experience(group, case_id_col, activity_col, timestamp_col):
     group = group.reset_index(drop=True)
+    n = len(group)
 
-    for i in range(len(group)):
+    ent_act = np.zeros(n)
+    ent_case = np.zeros(n)
+    ent_handoff = np.zeros(n)
+    busyness = np.zeros(n)
+    
+    for i in range(n):
         hist = group.iloc[: i + 1]
 
-        group.loc[i, "ent_act"] = ent(hist, activity_col)
-        group.loc[i, "ent_case"] = ent(hist, case_id_col)
-        group.loc[i, "ent_handoff"] = ent(hist, "prev_resource")
+        ent_act[i] = ent(hist, activity_col)
+        ent_case[i] = ent(hist, case_id_col)
+        ent_handoff[i] = ent(hist, "prev_resource")
 
         minutes = (hist[timestamp_col].max() - hist[timestamp_col].min()).total_seconds() / 60
-        # Busyness = tasks per minute
-        if minutes > 0:
-            group.loc[i, "busyness"] = len(hist) / minutes
-        else:
-            # For the very first event, we can't calculate busyness yet
-            group.loc[i, "busyness"] = 0.0
+        busyness[i] = len(hist) / minutes if minutes > 0 else 0.0
+    
+    group["ent_act"] = ent_act
+    group["ent_case"] = ent_case
+    group["ent_handoff"] = ent_handoff
+    group["busyness"] = busyness
 
     return group
 
@@ -55,47 +61,72 @@ def build_event_features(group, timestamp_col, activity_col):
     group = group.sort_values(timestamp_col).reset_index(drop=True)
     cols = set(group.columns)
 
+    activity_values = group[activity_col].values if activity_col in cols else None
+    prev_resource_values = group["prev_resource"].values if "prev_resource" in cols else None
+    
     seq = []
-    for idx, row in group.iterrows():
+    for idx in range(len(group)):
+        row = group.iloc[idx]
         event_features = {}
 
-        def add(k):
-            if k in cols:
-                event_features[k] = row[k]
-
-        add("timesincemidnight")
-        add("weekday")
-        add("month")
-        add("timesincelastevent")
-        add("timesincecasestart")
-        add("event_nr")
-        add("prev_resource")
-        add("ent_act")
-        add("ent_case")
-        add("ent_handoff")
-        add("busyness")
-        add("open_cases")
-        add("res_work_items")
-        add("res_cases")
-        add("res_unique_tasks")
-        add("res_unique_handoffs")
-        add("res_ratio_workitems_global")
-        add("res_ratio_workitems_resource")
-        add("res_ratio_task_specific")
-        add("res_ratio_handoff_specific")
-        add("res_work_items_per_min")
-
-        historical_data = group.iloc[:idx + 1]
-        
-        if activity_col in cols:
-            act_freq = historical_data[activity_col].value_counts().to_dict()
-            event_features["act_freq"] = act_freq
-        
+        if "timesincemidnight" in cols:
+            event_features["timesincemidnight"] = row["timesincemidnight"]
+        if "weekday" in cols:
+            event_features["weekday"] = row["weekday"]
+        if "month" in cols:
+            event_features["month"] = row["month"]
+        if "timesincelastevent" in cols:
+            event_features["timesincelastevent"] = row["timesincelastevent"]
+        if "timesincecasestart" in cols:
+            event_features["timesincecasestart"] = row["timesincecasestart"]
+        if "event_nr" in cols:
+            event_features["event_nr"] = row["event_nr"]
         if "prev_resource" in cols:
-            handoff_freq = historical_data["prev_resource"].value_counts().to_dict()
-            event_features["handoff_freq"] = handoff_freq
+            event_features["prev_resource"] = row["prev_resource"]
+        if "ent_act" in cols:
+            event_features["ent_act"] = row["ent_act"]
+        if "ent_case" in cols:
+            event_features["ent_case"] = row["ent_case"]
+        if "ent_handoff" in cols:
+            event_features["ent_handoff"] = row["ent_handoff"]
+        if "busyness" in cols:
+            event_features["busyness"] = row["busyness"]
+        if "open_cases" in cols:
+            event_features["open_cases"] = row["open_cases"]
+        if "res_work_items" in cols:
+            event_features["res_work_items"] = row["res_work_items"]
+        if "res_cases" in cols:
+            event_features["res_cases"] = row["res_cases"]
+        if "res_unique_tasks" in cols:
+            event_features["res_unique_tasks"] = row["res_unique_tasks"]
+        if "res_unique_handoffs" in cols:
+            event_features["res_unique_handoffs"] = row["res_unique_handoffs"]
+        if "res_ratio_workitems_global" in cols:
+            event_features["res_ratio_workitems_global"] = row["res_ratio_workitems_global"]
+        if "res_ratio_workitems_resource" in cols:
+            event_features["res_ratio_workitems_resource"] = row["res_ratio_workitems_resource"]
+        if "res_ratio_task_specific" in cols:
+            event_features["res_ratio_task_specific"] = row["res_ratio_task_specific"]
+        if "res_ratio_handoff_specific" in cols:
+            event_features["res_ratio_handoff_specific"] = row["res_ratio_handoff_specific"]
+        if "res_work_items_per_min" in cols:
+            event_features["res_work_items_per_min"] = row["res_work_items_per_min"]
 
-        seq.append([row[activity_col], row["timesincecasestart"] if "timesincecasestart" in cols else 0, event_features])
+        if activity_values is not None:
+            hist_activities = activity_values[:idx + 1]
+            unique, counts = np.unique(hist_activities, return_counts=True)
+            event_features["act_freq"] = dict(zip(unique, counts.tolist()))
+        
+        if prev_resource_values is not None:
+            hist_handoffs = prev_resource_values[:idx + 1]
+            unique, counts = np.unique(hist_handoffs, return_counts=True)
+            event_features["handoff_freq"] = dict(zip(unique, counts.tolist()))
+
+        seq.append([
+            row[activity_col],
+            row["timesincecasestart"] if "timesincecasestart" in cols else 0,
+            event_features
+        ])
 
     return seq
 
@@ -163,12 +194,7 @@ def preprocess_log(log_name: str):
             lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col)
         )
     
-        data = data.merge(
-            res_exp_features[["_row_id", "ent_act", "ent_case", "ent_handoff", "busyness"]], 
-            on="_row_id", 
-            how="left",
-            suffixes=('', '_new')
-        )
+        data = data.merge(res_exp_features[["_row_id", "ent_act", "ent_case", "ent_handoff", "busyness"]], on="_row_id", how="left", suffixes=('', '_new'))
 
     if has_ts:
         case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
@@ -188,12 +214,7 @@ def preprocess_log(log_name: str):
         global_cases_seen = set()
         sorted_data = data.sort_values(timestamp_col).copy()
         
-        res_stats_cols = {
-            "res_work_items": [], "res_cases": [], "res_unique_tasks": [],
-            "res_unique_handoffs": [], "res_ratio_workitems_global": [],
-            "res_ratio_workitems_resource": [], "res_ratio_task_specific": [],
-            "res_ratio_handoff_specific": [], "res_work_items_per_min": []
-        }
+        res_stats_cols = {"res_work_items": [], "res_cases": [], "res_unique_tasks": [], "res_unique_handoffs": [], "res_ratio_workitems_global": [], "res_ratio_workitems_resource": [], "res_ratio_task_specific": [], "res_ratio_handoff_specific": [], "res_work_items_per_min": []}
 
         for i, row in sorted_data.iterrows():
             res = row[resource_col]
