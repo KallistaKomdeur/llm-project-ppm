@@ -25,13 +25,13 @@ def ensure_preprocessed(log_name: str, clean_first: bool) -> Path:
     if clean_first:
         original_csv_path = log_dir / f"{log_name}.csv"
         clean_csv_path = log_dir / f"{log_name}_clean.csv"
-        preprocessed_clean_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
+        preprocessed_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
 
         if not clean_csv_path.exists():
             print(f"Creating clean version of {log_name}")
-            clean_log(original_csv_path, clean_csv_path)
+            clean_log(original_csv_path, clean_csv_path, log_name)
 
-        if not preprocessed_clean_path.exists():
+        if not preprocessed_path.exists():
             print(f"Preprocessed clean file missing. Running preprocessing for clean {log_name}.")
             preprocess_log(log_name, clean_version = True)
 
