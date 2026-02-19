@@ -1,122 +1,90 @@
 import json
-from pathlib import Path
-from typing import List, Dict
+import argparse
+import pandas as pd
 import numpy as np
-from utils.io_utils import get_input
+from pathlib import Path
+from datetime import datetime, timezone
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# ======================
-# HELPER FUNCTIONS
-# ======================
-import re
-from typing import Optional
+BASE_DIR = Path(__file__).resolve().parent
 
-def extract_prediction_from_raw(llm_raw_output) -> Optional[float]:
-    """
-    Extract predicted lead time from raw LLM output.
-    Supports:
-    - [[ 12345 ]]
-    - [[ ## answer ## ]]\\n12345
-    """
+def load_results(log_name):
+    results_dir = BASE_DIR / "results" / log_name
+    if not results_dir.exists():
+        print(f"Error: Directory {results_dir} not found.")
+        return pd.DataFrame()
 
-    if not llm_raw_output:
-        return None
-
-    # llm_raw_output is a LIST of strings → join safely
-    if isinstance(llm_raw_output, list):
-        text = "\n".join(llm_raw_output)
-    else:
-        text = str(llm_raw_output)
-
-    # 1) Prefer numbers inside [[ ... ]]
-    bracket_matches = re.findall(r"\[\[\s*([0-9]+)\s*\]\]", text)
-    if bracket_matches:
-        return float(bracket_matches[0])
-
-    # 2) Fallback: first standalone integer
-    number_matches = re.findall(r"\b([0-9]+)\b", text)
-    if number_matches:
-        return float(number_matches[0])
-
-    return None
-
-def load_all_runs(results_dir: Path) -> List[Dict]:
-    """
-    Get all runs in this folder
-    """
-    runs = sorted(results_dir.glob("run_*.jsonl"))
-    records = []
-    for file in runs:
-        with open(file, "r", encoding="utf-8") as f:
+    all_records = []
+    files = list(results_dir.glob("run_*.jsonl"))
+    
+    for file_path in files:
+        with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
-                if not line.strip():
+                try:
+                    all_records.append(json.loads(line))
+                except json.JSONDecodeError:
                     continue
-                records.append(json.loads(line))
-    return records
+    
+    return pd.DataFrame(all_records)
 
-def compute_mae(y_true: List[float], y_pred: List[float]) -> float:
-    """
-    Computes and returns mean absolute erorr (MAE) in minutes
-    """
-    return float(np.mean(np.abs(np.array(y_true) - np.array(y_pred))))
+def evaluate(log_name):
+    df = load_results(log_name)
+    if df.empty:
+        print(f"No results found for {log_name}.")
+        return
 
-def compute_mape(y_true: List[float], y_pred: List[float]) -> float:
-    """
-    Computes Mean Absolute Percentage Error (MAPE)
-    """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
+    # Convert to numeric and drop invalid rows
+    df['llm_answer'] = pd.to_numeric(df['llm_answer'], errors='coerce')
+    df['actual_case_duration'] = pd.to_numeric(df['actual_case_duration'], errors='coerce')
+    df = df.dropna(subset=['llm_answer', 'actual_case_duration'])
 
-    # avoid division by zero
-    non_zero = y_true != 0
-    if not np.any(non_zero):
-        raise ValueError("All true values are zero; MAPE undefined.")
+    # Grouping keys based on your requirements + model
+    group_cols = [
+        'provider', 
+        'model',
+        'configuration', 
+        'case_attributes_included', 
+        'log_info_included', 
+        'clean_first'
+    ]
 
-    return float(np.mean(np.abs((y_true[non_zero] - y_pred[non_zero]) / y_true[non_zero])))
+    summary_results = []
+    
+    # Group and iterate
+    grouped = df.groupby(group_cols)
+    
+    for names, group in grouped:
+        y_true = group['actual_case_duration']
+        y_pred = group['llm_answer']
+        
+        # Create group identifier dictionary
+        group_meta = dict(zip(group_cols, names))
+        
+        # Calculate metrics
+        metrics = {
+            "parameters": group_meta,
+            "n_samples": int(len(group)),
+            "actual_avg": float(y_true.mean()),
+            "predicted_avg": float(y_pred.mean()),
+            "mae": float(mean_absolute_error(y_true, y_pred)),
+            "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+            "r2": float(r2_score(y_true, y_pred)) if len(group) > 1 else None
+        }
+        summary_results.append(metrics)
 
-# ======================
-# MAIN FUNCTION
-# ======================
-def evaluate(configuration: str, log_name: str, provider: str):
-    BASE_DIR = Path(__file__).resolve().parent
-    results_dir = BASE_DIR / "results" / configuration / log_name / provider
-    records = load_all_runs(results_dir)
-
-    y_true = []
-    y_pred = []
-
-    for r in records:
-        actual = r.get("actual_case_duration")
-        pred = extract_prediction_from_raw(r.get("llm_raw_output"))
-
-        if actual is None or pred is None:
-            continue
-
-        y_true.append(float(actual))
-        y_pred.append(float(pred))
-
-    if not y_true:
-        raise ValueError("No valid records found.")
-
-    mae = compute_mae(y_true, y_pred)
-    mape = compute_mape(y_true, y_pred)
-    mean_actual = float(np.mean(y_true))
-
-    summary = {
-        "mae": mae,
-        "mape": mape,
-        "mean_actual_case_duration": mean_actual,
-        "n_traces": len(y_true)
+    final_output = {
+        "log_name": log_name,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "evaluation_groups": summary_results
     }
 
-    summary_path = results_dir / "summary.json"
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
+    # Save to the results directory
+    output_path = BASE_DIR / "results" / log_name / "evaluation_summary.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(final_output, f, indent=4)
 
-    return summary
-
-# ======================
-# ENTRY POINT
-# ======================
 if __name__ == "__main__":
-    log_name, provider, model, configuration = get_input()
-    evaluate(configuration, log_name, provider)
+    parser = argparse.ArgumentParser(description="Evaluate LLM performance and output JSON.")
+    parser.add_argument("log_name", type=str, help="The folder name within results/")
+    args = parser.parse_args()
+    evaluate(args.log_name)
