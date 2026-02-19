@@ -1,8 +1,10 @@
-n_runs: 1
-examples_count: 1
+n_runs: 40
+examples_count: 10
 print_only: true
+clean_first: true
 
 include_case_attributes: true
+include_log_info: true
 
 included_inter_case:
   - timesincemidnight
@@ -16,7 +18,7 @@ included_inter_case:
   - ent_case
   - ent_handoff
   - busyness
-  - open_cases
+  #- open_cases
   - res_work_items
   - res_cases
   - res_unique_tasks

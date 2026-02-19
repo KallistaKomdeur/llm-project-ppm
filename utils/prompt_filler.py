@@ -74,7 +74,8 @@ def get_case_attributes(case: Dict, include_case_attr: bool, case_attribute_keys
 def fill_prompt(
     log_name: str,
     configuration: str,
-    examples_count: int
+    examples_count: int,
+    clean_first: bool
 ):
     """
     Fills the prompt template with values. 
@@ -84,7 +85,11 @@ def fill_prompt(
 
     log_dir = root / "logs" / log_name
     prompt_path = root / "prompts" / f"{configuration}.txt"
-    preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
+    
+    if clean_first:
+        preprocessed_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
+    else:
+        preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
 
     if not preprocessed_path.exists():
         raise FileNotFoundError(preprocessed_path)

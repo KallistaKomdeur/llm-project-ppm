@@ -140,7 +140,7 @@ def safe_convert(obj):
 # ======================
 # MAIN FUNCTION
 # ======================
-def preprocess_log(log_name: str):
+def preprocess_log(log_name: str, clean_version: bool):
     schema = load_log_schema(log_name)
     case_id_col = schema.case_id
     activity_col = schema.activity
@@ -150,8 +150,13 @@ def preprocess_log(log_name: str):
 
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
-    input_file = log_dir / f"{log_name}.csv"
-    output_file = log_dir / f"{log_name}_preprocessed.jsonl"
+    
+    if clean_version:
+        input_file = log_dir / f"{log_name}_clean.csv"
+        output_file = log_dir / f"{log_name}_clean_preprocessed.jsonl"
+    else:
+        input_file = log_dir / f"{log_name}.csv"
+        output_file = log_dir / f"{log_name}_preprocessed.jsonl"
 
     if not input_file.exists():
         raise FileNotFoundError(f"Log not found: {input_file}")

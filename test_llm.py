@@ -9,22 +9,38 @@ from utils.preprocessing import preprocess_log
 from utils.llm_parsing import parse_llm_output
 from utils.prompt_splitter import split_prompt_by_markers
 from utils.load_config import load_config
+from utils.clean_log import clean_log
 
 BASE_DIR = Path(__file__).resolve().parent
 
 # ======================
 # HELPER FUNCTIONS
 # ======================
-def ensure_preprocessed(log_name: str) -> Path:
+def ensure_preprocessed(log_name: str, clean_first: bool) -> Path:
     """
     Ensure the preprocessed JSONL exists for the given log. If it does not already exist, the log is preprocessed.
     """
     log_dir = BASE_DIR / "logs" / log_name
-    preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
 
-    if not preprocessed_path.exists():
-        print(f"Preprocessed file missing. Running preprocessing for '{log_name}'")
-        preprocess_log(log_name)
+    if clean_first:
+        original_csv_path = log_dir / f"{log_name}.csv"
+        clean_csv_path = log_dir / f"{log_name}_clean.csv"
+        preprocessed_clean_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
+
+        if not clean_csv_path.exists():
+            print(f"Creating clean version of {log_name}")
+            clean_log(original_csv_path, clean_csv_path)
+
+        if not preprocessed_clean_path.exists():
+            print(f"Preprocessed clean file missing. Running preprocessing for clean {log_name}.")
+            preprocess_log(log_name, clean_version = True)
+
+    else:
+        preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
+
+        if not preprocessed_path.exists():
+            print(f"Preprocessed file missing. Running preprocessing for {log_name}")
+            preprocess_log(log_name, clean_version = False)
 
     return preprocessed_path
 
@@ -32,7 +48,7 @@ def get_results_path(configuration: str, log_name: str, provider: str) -> Path:
     """
     Returns the JSONL file where query logs are appended.
     """
-    results_dir = BASE_DIR / "results" / configuration / log_name / provider
+    results_dir = BASE_DIR / "results" / log_name
     results_dir.mkdir(parents=True, exist_ok=True)
 
     existing_files = [
@@ -53,13 +69,15 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
     """
     Runs LLM predictions and logs each query.
     """
+    clean_first = config.get("clean_first", False)
+
     # Ensure log is preprocessed
-    preprocessed_path = ensure_preprocessed(log_name)
+    preprocessed_path = ensure_preprocessed(log_name, clean_first)
     results_path = get_results_path(configuration, log_name, provider)
 
     for run_idx in range(n_runs):
         # Build prompt
-        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count)
+        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
 
         # Optional splitting
         prompt_parts = (
@@ -100,6 +118,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "case_attributes_included": include_case_attr,
             "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
+            "clean_first": clean_first,
 
             "prompt_parts": prompt_parts,
             "llm_raw_output": llm_outputs
