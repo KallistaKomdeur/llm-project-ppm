@@ -34,7 +34,7 @@ def get_prev_resource(group, resource_col):
 def extract_resource_experience(group, case_id_col, activity_col, timestamp_col):
     group = group.reset_index(drop=True)
     n = len(group)
-
+    
     ent_act = np.zeros(n)
     ent_case = np.zeros(n)
     ent_handoff = np.zeros(n)
@@ -166,6 +166,7 @@ def preprocess_log(log_name: str):
     data = original_data.copy()
 
     if has_ts:
+        print("Extracting timestamp features")
         data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
         data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
         data["weekday"] = data[timestamp_col].dt.weekday
@@ -180,6 +181,7 @@ def preprocess_log(log_name: str):
             data[col] = ts_features[col].values
 
     if has_res:
+        print("Detecting handoffs")
         prev_res_data = data.copy()
         prev_res_features = prev_res_data.groupby(case_id_col, group_keys=False).apply(
             lambda g: get_prev_resource(g, resource_col)
@@ -187,6 +189,7 @@ def preprocess_log(log_name: str):
         data["prev_resource"] = prev_res_features["prev_resource"].values
 
     if has_res and has_act and has_ts:
+        print(f"Extracting resource experience features")
         data['_row_id'] = range(len(data))
     
         res_exp_data = data.copy().sort_values(timestamp_col)
@@ -197,6 +200,7 @@ def preprocess_log(log_name: str):
         data = data.merge(res_exp_features[["_row_id", "ent_act", "ent_case", "ent_handoff", "busyness"]], on="_row_id", how="left", suffixes=('', '_new'))
 
     if has_ts:
+        print("Calculating workload features")
         case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
         data["open_cases"] = data[timestamp_col].apply(
             lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum()
@@ -206,6 +210,7 @@ def preprocess_log(log_name: str):
         if '_row_id' not in data.columns:
             data['_row_id'] = range(len(data))
         
+        print("Computing resource statistics")
         resource_stats = defaultdict(lambda: {
             "work_items": 0, "cases": set(), "tasks": defaultdict(int),
             "handoffs": defaultdict(int), "handoff_set": set(), "first_ts": None
@@ -214,8 +219,8 @@ def preprocess_log(log_name: str):
         global_cases_seen = set()
         sorted_data = data.sort_values(timestamp_col).copy()
         
-        res_stats_cols = {"res_work_items": [], "res_cases": [], "res_unique_tasks": [], "res_unique_handoffs": [], "res_ratio_workitems_global": [], "res_ratio_workitems_resource": [], "res_ratio_task_specific": [], "res_ratio_handoff_specific": [], "res_work_items_per_min": []}
-
+        res_stats_cols = {"res_work_items": [], "res_cases": [], "res_unique_tasks": [],"res_unique_handoffs": [], "res_ratio_workitems_global": [],"res_ratio_workitems_resource": [], "res_ratio_task_specific": [],"res_ratio_handoff_specific": [], "res_work_items_per_min": []}
+        
         for i, row in sorted_data.iterrows():
             res = row[resource_col]
             cid = row[case_id_col]
@@ -258,8 +263,11 @@ def preprocess_log(log_name: str):
     if '_row_id' in data.columns:
         data = data.drop('_row_id', axis=1)
 
+    print(f"Building output")
     output = []
-    for cid, group in data.groupby(case_id_col):
+    
+    for idx, (cid, group) in enumerate(data.groupby(case_id_col)):
+        
         total_time = ((group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60 if has_ts else 0)
         case_attrs = {c: group[c].iloc[0] for c in case_attr_cols}
         output.append({
@@ -269,6 +277,7 @@ def preprocess_log(log_name: str):
             "total_time": total_time
         })
 
+    print(f"Writing to {output_file.name}")
     with open(output_file, "w", encoding="utf-8") as f:
         for case in output:
             f.write(json.dumps(case, default=safe_convert) + "\n")
