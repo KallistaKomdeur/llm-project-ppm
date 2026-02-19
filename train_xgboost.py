@@ -7,23 +7,9 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 from utils.log_schema import load_log_schema
 
-def train_xgb(log_name: str, logs_dir: str = "logs", results_dir: str = "results"):
-    """
-    Train XGBoost model to predict total case duration and save metrics as JSON.
-    """
-    # Load schema and CSV
-    schema = load_log_schema(log_name)
-    case_col = schema.case_id
-    activity_col = schema.activity
-    resource_col = schema.resource
-    timestamp_col = schema.timestamp
-    case_attrs = schema.case_attributes
-
-    csv_path = Path(logs_dir) / log_name / f"{log_name}.csv"
-    df = pd.read_csv(csv_path)
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col], utc=True)
-
-    # Aggregate features
+def run_xgb_pipeline(df: pd.DataFrame, case_col, activity_col, resource_col, timestamp_col, case_attrs):
+    """Aggregate features per case, train XGBoost with hyperparameter tuning, return metrics and model."""
+    # Aggregate features per case
     case_features = []
 
     for case_id, group in df.groupby(case_col):
@@ -104,17 +90,51 @@ def train_xgb(log_name: str, logs_dir: str = "logs", results_dir: str = "results
         "best_params": search.best_params_
     }
 
-    # Save metrics JSON
+    return best_model, metrics
+
+def train_xgb(log_name: str, logs_dir: str = "logs", results_dir: str = "results"):
+    """Train XGBoost on raw and cleaned logs (if available) and save metrics JSON."""
+    # Load schema
+    schema = load_log_schema(log_name)
+    case_col = schema.case_id
+    activity_col = schema.activity
+    resource_col = schema.resource
+    timestamp_col = schema.timestamp
+    case_attrs = schema.case_attributes
+
+    results = {}
+
+    # Raw log
+    raw_csv = Path(logs_dir) / log_name / f"{log_name}.csv"
+    df_raw = pd.read_csv(raw_csv)
+    df_raw[timestamp_col] = pd.to_datetime(df_raw[timestamp_col], utc=True)
+
+    print(f"Processing raw log: {raw_csv}")
+    _, metrics_raw = run_xgb_pipeline(df_raw, case_col, activity_col, resource_col, timestamp_col, case_attrs)
+    results['raw'] = metrics_raw
+
+    # Clean log (if exists)
+    clean_csv = Path(logs_dir) / log_name / f"{log_name}_clean.csv"
+    if clean_csv.exists():
+        df_clean = pd.read_csv(clean_csv)
+        df_clean[timestamp_col] = pd.to_datetime(df_clean[timestamp_col], utc=True)
+        print(f"Processing cleaned log: {clean_csv}")
+        _, metrics_clean = run_xgb_pipeline(df_clean, case_col, activity_col, resource_col, timestamp_col, case_attrs)
+        results['clean'] = metrics_clean
+    else:
+        print("No cleaned log found, skipping.")
+
+    # Save JSON metrics
     output_dir = Path(results_dir) / log_name
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = output_dir / f"xgboost_{log_name}.json"
     with open(metrics_path, "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=4)
+        json.dump(results, f, indent=4)
 
     print(f"Metrics saved to {metrics_path}")
-    print(metrics)
+    print(json.dumps(results, indent=4))
 
-    return best_model, metrics
+    return results
 
 # Terminal entry point
 if __name__ == "__main__":
