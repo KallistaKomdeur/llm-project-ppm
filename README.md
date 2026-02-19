@@ -64,3 +64,11 @@ python -m evaluate <log_name> <provider> <configuration>
 ```
 
 The input parameters are the same as those described in section "Getting LLM responses".
+
+### Benchmark evaluation
+
+XGBoost was used as benchmark. To train and tune an XGBoost model on the data (both raw and cleaned), run the following in the terminal:
+
+```
+python train_xgboost.py <log_name>
+```
