@@ -64,6 +64,9 @@ def build_event_features(group, timestamp_col, activity_col):
     activity_values = group[activity_col].values if activity_col in cols else None
     prev_resource_values = group["prev_resource"].values if "prev_resource" in cols else None
     
+    if prev_resource_values is not None:
+        prev_resource_values = prev_resource_values.astype(str)
+
     seq = []
     for idx in range(len(group)):
         row = group.iloc[idx]
