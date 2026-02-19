@@ -56,6 +56,7 @@ def temporal_train_test_split(cases: List[Dict], train_ratio: float = 0.8) -> Tu
         if truncated_seq:  # skip empty truncated cases
             truncated_case = dict(c)
             truncated_case["ActTimeSeq"] = truncated_seq
+            truncated_case["true_total_time"] = c["total_time"]
             truncated_case["total_time"] = "RUNNING"
             test_cases_trunc.append(truncated_case)
 

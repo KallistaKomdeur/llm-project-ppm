@@ -1,5 +1,5 @@
 You will receive context in multiple parts.
-Do not answer until you see ===FINAL QUERY===.
+Do not answer until you see ===PART:FINAL QUERY===.
 
 You are an expert in process mining and machine learning. Your task is to predict the ’total time’ of process instances based on event logs, as each process instance is a sequence of activities. 
 
@@ -26,10 +26,10 @@ The log is represented as a python list containing one dictionary for each trace
  
  {PROCESS_CONTEXT}
  
- ===PART:EXAMPLES===
+===PART:EXAMPLES===
  The following list shows some completed example cases with their total times: 
  {EXAMPLES}
 
-===FINAL QUERY===
+===PART:FINAL QUERY===
  Now predict the total time for this new uncompleted case, considering that the case is still running: 
 {NEW_CASE}
