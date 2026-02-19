@@ -2,3 +2,4 @@
 logs/
 __pycache__/
 results/
+results_xgboost/
