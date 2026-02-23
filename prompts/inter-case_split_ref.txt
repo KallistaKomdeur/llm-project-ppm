@@ -7,7 +7,7 @@ A event log is a collection of traces, where each trace represents a process ins
 
 The log is represented as a python list containing one dictionary for each trace. Included in it are:
 {CASE_ATTRIBUTE_EXPLANATIONS}
- -the key "ActTimeSeq", which value is a list of [activity, cumulative elapsed minutes] 
+ -the key "ActTimeSeq", which value is a list of [activity, cumulative elapsed minutes, {inter-case features}] 
  -The key "total_time", which value is the total execution time in minutes from the start of the activity, that is the value to predict. 
  
 ===PART:ANSWER STRUCTURE===
