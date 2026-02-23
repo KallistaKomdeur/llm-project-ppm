@@ -1,0 +1,8 @@
+log_name: helpdesk
+log_description: The process is an excerpt of a helpdesk.
+columns:
+  case_id: case:concept:name
+  activity: concept:name
+  resource: org:resource
+  timestamp: time:timestamp
+case_attributes:

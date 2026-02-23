@@ -1,0 +1,9 @@
+log_name: tester
+log_description: description here!
+columns:
+  case_id: CaseId
+  activity: Activity
+  resource: Resource
+  timestamp: Timestamp
+case_attributes:
+  Global: a case attribute!
