@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import random
 from typing import Tuple, List, Dict
 
 # ======================
@@ -27,41 +28,48 @@ def completion_time(case: Dict) -> float:
 # ======================
 def temporal_train_test_split(cases: List[Dict], train_ratio: float = 0.8) -> Tuple[List[Dict], List[Dict]]:
     """
-    Computes t_split such that train_ratio of cases are completed by t_split
+    Splits cases temporally assuming cases are already sorted by completion time (end_ts).
+    
+    Train: first train_ratio of cases (earliest completions).
+    Test: cases from remaining cases that have at least one event before t_split 
+          (end_ts of last train case) and at least one event after t_split.
+    
+    Requires: cases have 'end_ts', 'start_ts', and 'ActTimeSeq' with format [activity, time_since_start, features].
     """
     if not cases:
         raise ValueError("Empty case list")
 
-    # Compute completion times
-    for case in cases:
-        case["_completion_time"] = completion_time(case)
+    # Assume cases are sorted by completion time (end_ts in ascending order)
+    n_train = max(1, int(len(cases) * train_ratio))
+    train_cases = cases[:n_train]
+    
+    # t_split is the end time of the last training case
+    if "end_ts" not in train_cases[-1] or train_cases[-1]["end_ts"] is None:
+        raise ValueError("Training cases must have 'end_ts' (epoch seconds)")
+    t_split = train_cases[-1]["end_ts"]
 
-    # Sort cases by completion time
-    sorted_cases = sorted(cases, key=lambda x: x["_completion_time"])
-
-    # Compute t_split (80% of cases completed)
-    n_train = max(1, int(len(sorted_cases) * train_ratio))  # at least 1
-    t_split = sorted_cases[n_train - 1]["_completion_time"]
-
-    # Training = cases completed by t_split
-    train_cases = [c for c in sorted_cases if c["_completion_time"] <= t_split]
-
-    # Test = remaining cases
-    test_cases_full = [c for c in sorted_cases if c["_completion_time"] > t_split]
-
-    # Truncate test cases
+    # Select test cases: any case that spans t_split (has events before and after)
     test_cases_trunc = []
-    for c in test_cases_full:
-        truncated_seq = [e for e in c["ActTimeSeq"] if e[1] <= t_split]
-        if truncated_seq:  # skip empty truncated cases
+    for c in cases[n_train:]:
+        seq = c.get("ActTimeSeq", [])
+        if not seq:
+            continue
+
+        # Convert event times (minutes since case start) to absolute epoch seconds
+        if "start_ts" not in c or c["start_ts"] is None:
+            raise ValueError(f"Case {c.get('CaseId')} missing 'start_ts'")
+        times = [c["start_ts"] + float(e[1]) * 60.0 for e in seq]
+
+        has_before = any(t <= t_split for t in times)
+        has_after = any(t > t_split for t in times)
+
+        if has_before and has_after:
+            # Keep only events up to t_split
+            truncated_seq = [e for e, abs_t in zip(seq, times) if abs_t <= t_split]
             truncated_case = dict(c)
             truncated_case["ActTimeSeq"] = truncated_seq
-            truncated_case["true_total_time"] = c["total_time"]
+            truncated_case["true_total_time"] = c.get("total_time")
             truncated_case["total_time"] = "RUNNING"
             test_cases_trunc.append(truncated_case)
-
-    # Clean up helper field
-    for c in cases:
-        del c["_completion_time"]
 
     return train_cases, test_cases_trunc
