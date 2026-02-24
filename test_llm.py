@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from utils.io_utils import get_input
-from utils.send_query import send_query
+from utils.send_query import LLMSession
 from utils.prompt_filler import fill_prompt
 from utils.preprocessing import preprocess_log
 from utils.llm_parsing import parse_llm_output
@@ -75,7 +75,10 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
     preprocessed_path = ensure_preprocessed(log_name, clean_first)
     results_path = get_results_path(configuration, log_name, provider)
 
+    session = LLMSession()
+
     for run_idx in range(n_runs):
+        session.reset()     # Clear cache!
         # Build prompt
         prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
 
@@ -97,7 +100,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
         for i, part in enumerate(prompt_parts, start=1):
             print(f"Sending part {i}/{len(prompt_parts)}")
-            output = send_query(provider, model, part)
+            output = session.send_query(provider, model, part)
             llm_outputs.append(output)
         
         final_output = llm_outputs[-1]
