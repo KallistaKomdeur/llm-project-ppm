@@ -112,7 +112,7 @@ def fill_prompt(
     # Case attribute explanations
     if include_log_info:
         
-        case_attr_expl = "\n".join(f"- the key \"{k}\", which value is {v}" for k, v in case_attrs.items())
+        case_attr_expl = "\n".join(f"- the key \"{k}\", which value is {v}" for k, v in (case_attrs or {}).items())
 
         # Process context
         process_context = schema.log_description or ""
@@ -128,7 +128,7 @@ def fill_prompt(
     example_cases = random.sample(train_cases, examples_count)
 
     example_blocks = []
-    case_attr_keys = list(case_attrs)
+    case_attr_keys = list(case_attrs) if case_attrs else []
 
     for i, case in enumerate(example_cases, start=1):
         formatted = format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys)
@@ -154,8 +154,8 @@ def fill_prompt(
         template
         .replace("{EXAMPLES}", examples_str)
         .replace("{NEW_CASE}", test_block)
-        .replace("{CASE_ATTRIBUTE_EXPLANATIONS}", case_attr_expl)
-        .replace("{PROCESS_CONTEXT}", process_context)
+        .replace("{CASE_ATTRIBUTE_EXPLANATIONS}", case_attr_expl or "")
+        .replace("{PROCESS_CONTEXT}", process_context or "")
     )
 
     return filled_prompt, true_total_time, prefix_length, include_case_attr, include_log_info, included_inter_case
