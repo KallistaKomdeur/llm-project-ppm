@@ -165,6 +165,12 @@ def preprocess_log(log_name: str, clean_version: bool):
         raise FileNotFoundError(f"Log not found: {input_file}")
 
     original_data = pd.read_csv(input_file, encoding="latin-1")
+    original_data[timestamp_col] = pd.to_datetime(original_data[timestamp_col], errors='coerce', utc=True)
+
+    if log_name == "bac":
+        original_data["START_DATE"] = pd.to_datetime(original_data["START_DATE"], errors="coerce")
+        original_data["END_DATE"] = pd.to_datetime(original_data["END_DATE"], errors="coerce")
+        original_data["END_DATE"] = original_data["END_DATE"].fillna(original_data["START_DATE"])
 
     available_cols = set(original_data.columns)
     has_ts = timestamp_col in available_cols
@@ -173,9 +179,15 @@ def preprocess_log(log_name: str, clean_version: bool):
 
     data = original_data.copy()
 
+    # Ensure chronological order of input events by timestamp (if present)
+    if has_ts:
+        print("Sorting input data by timestamp")
+        # convert to datetime if not already
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
+        data = data.sort_values(timestamp_col).reset_index(drop=True)
+
     if has_ts:
         print("Extracting timestamp features")
-        data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
         data["timesincemidnight"] = data[timestamp_col].dt.hour * 60 + data[timestamp_col].dt.minute
         data["weekday"] = data[timestamp_col].dt.weekday
         data["month"] = data[timestamp_col].dt.month
@@ -274,15 +286,31 @@ def preprocess_log(log_name: str, clean_version: bool):
     print(f"Building output")
     output = []
     
-    for idx, (cid, group) in enumerate(data.groupby(case_id_col)):
-        
+    if has_ts:
+        # order cases by their end (latest) timestamp
+        case_order = data.groupby(case_id_col)[timestamp_col].max().sort_values().index
+    else:
+        # fallback: preserve grouping order by case id
+        case_order = list(data.groupby(case_id_col).groups.keys())
+
+    for cid in case_order:
+        group = data[data[case_id_col] == cid]
         total_time = ((group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60 if has_ts else 0)
-        case_attrs = {c: group[c].iloc[0] for c in case_attr_cols}
+        # absolute start/end timestamps (seconds since epoch) for temporal splitting
+        if has_ts:
+            start_ts = group[timestamp_col].min().timestamp()
+            end_ts = group[timestamp_col].max().timestamp()
+        else:
+            start_ts = None
+            end_ts = None
+        case_attrs = {c: group[c].iloc[0] for c in (case_attr_cols or [])}
         output.append({
             case_id_col: cid,
             **case_attrs,
             "ActTimeSeq": (build_event_features(group, timestamp_col, activity_col) if has_act else []),
-            "total_time": total_time
+            "total_time": total_time,
+            "start_ts": start_ts,
+            "end_ts": end_ts
         })
 
     print(f"Writing to {output_file.name}")
