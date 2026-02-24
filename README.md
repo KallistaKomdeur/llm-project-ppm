@@ -27,6 +27,7 @@ Since logs are too large to store on GitHub, you'll have to upload yours yoursel
 1. Make a folder "logs" in the root directory.
 2. In "logs", make a folder with the name of your event log
 3. In "logs/your_event_log", place file "your_event_log.csv"
+4. In "config/log_schemas", create a file "your_log.yaml". In here, create a schema for your log as shown in the example yaml files.
 
 ### 4. Prepare your environment.
 
@@ -50,25 +51,23 @@ The input parameters are:
 
 1. log_name: name of the event log. Can be any of "your_event_log"
 2. provider: name of the LLM provider. Restricted to "gemini", "openai", "anthropic"
-3. configuration: which input configuration to use. Restricted to "single_x", "inter-case_x", "single_split_x", "inter-case_split_x, where x is any value for which there exists a prompt.
+3. configuration: which input configuration to use. Restricted to the names of available prompts
 4. OPTIONAL --model: which model to use from the LLM provider. Default to gemini 2.5-flash, other options gpt-4o-mini
 
-If you want to only see the prompt and not the result, change in "test_llm.py" flag "print_only" to True.
+If you want to only see the prompt and not the result, change in "config/settings.yaml" flag "print_only" to True.
 
 ### Evaluating LLM responses
 
 To evaluate LLM results for a particular log, configuration, or provider, run the following in the terminal:
 
 ```
-python -m evaluate <log_name> <provider> <configuration>
+python -m evaluate <log_name>
 ```
-
-The input parameters are the same as those described in section "Getting LLM responses".
 
 ### Benchmark evaluation
 
 XGBoost was used as benchmark. To train and tune an XGBoost model on the data (both raw and cleaned), run the following in the terminal:
 
 ```
-python train_xgboost.py <log_name>
+python -m train_xgboost <log_name>
 ```
