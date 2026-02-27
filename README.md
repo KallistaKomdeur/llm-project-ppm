@@ -64,6 +64,8 @@ To evaluate LLM results for a particular log, configuration, or provider, run th
 python -m evaluate <log_name>
 ```
 
+## Useful information
+
 ### Benchmark evaluation
 
 XGBoost was used as benchmark. To train and tune an XGBoost model on the data (both raw and cleaned), run the following in the terminal:
