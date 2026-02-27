@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-from utils.io_utils import get_input
+from utils.general_utils import get_input
 from utils.send_query import LLMSession
 from utils.prompt_filler import fill_prompt
 from utils.preprocessing import preprocess_log
@@ -13,16 +13,14 @@ from utils.clean_log import clean_log
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# ======================
-# HELPER FUNCTIONS
-# ======================
-def ensure_preprocessed(log_name: str, clean_first: bool) -> Path:
+def ensure_preprocessed(log_name, clean_first):
     """
     Ensure the preprocessed JSONL exists for the given log. If it does not already exist, the log is preprocessed.
     """
     log_dir = BASE_DIR / "logs" / log_name
 
     if clean_first:
+        # If needs to be cleaned, define paths and clean
         original_csv_path = log_dir / f"{log_name}.csv"
         clean_csv_path = log_dir / f"{log_name}_clean.csv"
         preprocessed_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
@@ -36,6 +34,7 @@ def ensure_preprocessed(log_name: str, clean_first: bool) -> Path:
             preprocess_log(log_name, clean_version = True)
 
     else:
+        # If doesn't need to be cleaned, define path and preprocessed
         preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
 
         if not preprocessed_path.exists():
@@ -44,28 +43,18 @@ def ensure_preprocessed(log_name: str, clean_first: bool) -> Path:
 
     return preprocessed_path
 
-def get_results_path(configuration: str, log_name: str, provider: str) -> Path:
+def get_results_path(log_name):
     """
-    Returns the JSONL file where query logs are appended.
+    Returns the JSONL file where query logs are added.
     """
     results_dir = BASE_DIR / "results" / log_name
     results_dir.mkdir(parents=True, exist_ok=True)
-
-    existing_files = [
-        f for f in results_dir.iterdir()
-        if f.is_file() and f.name.startswith("run_") and f.suffix == ".jsonl"]
-
-    run_nums = [
-        int(f.stem.split("_")[-1]) for f in existing_files
-        if f.stem.split("_")[-1].isdigit()]
-
-    next_run = max(run_nums, default=0) + 1
+    existing_files = [f for f in results_dir.iterdir() if f.is_file() and f.name.startswith("run_") and f.suffix == ".jsonl"]
+    run_nums = [int(f.stem.split("_")[-1]) for f in existing_files if f.stem.split("_")[-1].isdigit()]  # Check how many runs have already been
+    next_run = max(run_nums, default=0) + 1                                                             # Find number for next run
     return results_dir / f"run_{next_run}.jsonl"
 
-# ======================
-# MAIN FUNCTION
-# ======================
-def test_llm(log_name: str, provider: str, model: str | None, configuration: str, n_runs: int, print_only: bool, examples_count: int):
+def test_llm(log_name, provider, model, configuration, n_runs, print_only, examples_count):
     """
     Runs LLM predictions and logs each query.
     """
@@ -73,26 +62,21 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
 
     # Ensure log is preprocessed
     preprocessed_path = ensure_preprocessed(log_name, clean_first)
-    results_path = get_results_path(configuration, log_name, provider)
+    results_path = get_results_path(log_name)
 
-    session = LLMSession()
+    session = LLMSession()      # Create session for caching
 
     for run_idx in range(n_runs):
-        session.reset()     # Clear cache!
-        # Build prompt
+        session.reset()     # Clear cache each individual run to prevent information flow!!!
         prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
 
         # Optional splitting
-        prompt_parts = (
-            split_prompt_by_markers(prompt_text)
-            if "split" in configuration
-            else [prompt_text]
-        )
+        prompt_parts = (split_prompt_by_markers(prompt_text) if "split" in configuration else [prompt_text])
 
         # If debugging, only print prompt
         if print_only:
             for i, part in enumerate(prompt_parts, start=1):
-                print(f"\n--- PROMPT PART {i}/{len(prompt_parts)} ---\n")
+                print("Split here\n")
                 print(part)
             return
 
@@ -103,11 +87,10 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             output = session.send_query(provider, model, part)
             llm_outputs.append(output)
         
-        final_output = llm_outputs[-1]
-        # Parse response
-        answer = parse_llm_output(final_output)
+        final_output = llm_outputs[-1]                  # Get final output
+        answer = parse_llm_output(final_output)         # Parse response
 
-        # Build log record
+        # Build log record for later analysis
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "provider": provider,
@@ -128,21 +111,14 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "llm_raw_output": llm_outputs
         }
 
-        # Append to JSONL
+        # Append to results file
         with open(results_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        print(
-            f"Run {run_idx + 1}/{n_runs} | logged"
-        )
+        print(f"Logged run {run_idx + 1}/{n_runs}")
 
-    print(f"Done, results saved to {results_path}")
     return results_path
 
-
-# ======================
-# ENTRY POINT
-# ======================
 if __name__ == "__main__":
     log_name, provider, model, configuration = get_input()
     config = load_config()
