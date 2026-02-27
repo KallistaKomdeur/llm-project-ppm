@@ -6,35 +6,39 @@ from pathlib import Path
 import json
 from utils.log_schema import load_log_schema
 
-# ======================
-# FEATURE FUNCTIONS
-# ======================
 def extract_timestamp_features(group, timestamp_col):
+    """ Get general timestamp features like time since last event, time since case start, and how manieth event"""
     group = group.sort_values(timestamp_col, ascending=False, kind="mergesort")
-
     tmp = group[timestamp_col] - group[timestamp_col].shift(-1)
     group["timesincelastevent"] = tmp.fillna(pd.Timedelta(0)).dt.total_seconds() / 60
-
     tmp = group[timestamp_col] - group[timestamp_col].iloc[-1]
     group["timesincecasestart"] = tmp.dt.total_seconds() / 60
-
     group = group.sort_values(timestamp_col, ascending=True, kind="mergesort")
     group["event_nr"] = range(1, len(group) + 1)
 
     return group
 
 def ent(data, col):
+    """ Helper to get entropy"""
     p = data[col].value_counts(normalize=True)
     return stats.entropy(p)
 
 def get_prev_resource(group, resource_col):
-    group["prev_resource"] = group[resource_col].shift(1).fillna("first")
+    """ Helper to get previous resource"""
+    group["prev_resource"] = group[resource_col].shift(1).fillna("first")       # If first activity, there is no previous resource
     return group
 
 def extract_resource_experience(group, case_id_col, activity_col, timestamp_col):
+    """ 
+    Get full resource experience, including (see inter-case features paper for definitions):
+    - Entropy of activities of resource
+    - Entropy of cases of resource
+    - Entropy of handoffs
+    - Busyness
+    
+    """
     group = group.reset_index(drop=True)
     n = len(group)
-    
     ent_act = np.zeros(n)
     ent_case = np.zeros(n)
     ent_handoff = np.zeros(n)
@@ -134,16 +138,15 @@ def build_event_features(group, timestamp_col, activity_col):
     return seq
 
 def safe_convert(obj):
+    """ Helper safe converter because typing is hard"""
     if isinstance(obj, np.generic):
         return obj.item()
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     return obj
 
-# ======================
-# MAIN FUNCTION
-# ======================
 def preprocess_log(log_name: str, clean_version: bool):
+    # Get column names from schema
     schema = load_log_schema(log_name)
     case_id_col = schema.case_id
     activity_col = schema.activity
@@ -151,6 +154,7 @@ def preprocess_log(log_name: str, clean_version: bool):
     timestamp_col = schema.timestamp
     case_attr_cols = schema.case_attributes
 
+    # Get correct file locations
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
     
@@ -164,14 +168,17 @@ def preprocess_log(log_name: str, clean_version: bool):
     if not input_file.exists():
         raise FileNotFoundError(f"Log not found: {input_file}")
 
+    # Read log data
     original_data = pd.read_csv(input_file, encoding="latin-1")
     original_data[timestamp_col] = pd.to_datetime(original_data[timestamp_col], errors='coerce', utc=True)
 
+    # TODO bac has some weird stuff going on where instant activities only have a start date. Since I use end date, I copy this over
     if log_name == "bac":
         original_data["START_DATE"] = pd.to_datetime(original_data["START_DATE"], errors="coerce")
         original_data["END_DATE"] = pd.to_datetime(original_data["END_DATE"], errors="coerce")
         original_data["END_DATE"] = original_data["END_DATE"].fillna(original_data["START_DATE"])
 
+    # Checks which features are available. Timestamp and activity are pretty much mandatory for anything useful
     available_cols = set(original_data.columns)
     has_ts = timestamp_col in available_cols
     has_res = resource_col in available_cols
@@ -179,11 +186,10 @@ def preprocess_log(log_name: str, clean_version: bool):
 
     data = original_data.copy()
 
-    # Ensure chronological order of input events by timestamp (if present)
+    # Ensure chronological order of input events by timestamp
     if has_ts:
         print("Sorting input data by timestamp")
-        # convert to datetime if not already
-        data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True)
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col], utc=True) # convert to datetime if not already
         data = data.sort_values(timestamp_col).reset_index(drop=True)
 
     if has_ts:
@@ -193,9 +199,7 @@ def preprocess_log(log_name: str, clean_version: bool):
         data["month"] = data[timestamp_col].dt.month
 
         ts_data = data.copy()
-        ts_features = ts_data.groupby(case_id_col, group_keys=False).apply(
-            lambda g: extract_timestamp_features(g, timestamp_col)
-        )
+        ts_features = ts_data.groupby(case_id_col, group_keys=False).apply(lambda g: extract_timestamp_features(g, timestamp_col))
         
         for col in ["timesincelastevent", "timesincecasestart", "event_nr"]:
             data[col] = ts_features[col].values
@@ -203,9 +207,7 @@ def preprocess_log(log_name: str, clean_version: bool):
     if has_res:
         print("Detecting handoffs")
         prev_res_data = data.copy()
-        prev_res_features = prev_res_data.groupby(case_id_col, group_keys=False).apply(
-            lambda g: get_prev_resource(g, resource_col)
-        )
+        prev_res_features = prev_res_data.groupby(case_id_col, group_keys=False).apply(lambda g: get_prev_resource(g, resource_col))
         data["prev_resource"] = prev_res_features["prev_resource"].values
 
     if has_res and has_act and has_ts:
@@ -287,7 +289,7 @@ def preprocess_log(log_name: str, clean_version: bool):
     output = []
     
     if has_ts:
-        # order cases by their end (latest) timestamp
+        # order cases by their end (= latest) timestamp
         case_order = data.groupby(case_id_col)[timestamp_col].max().sort_values().index
     else:
         # fallback: preserve grouping order by case id
@@ -296,7 +298,7 @@ def preprocess_log(log_name: str, clean_version: bool):
     for cid in case_order:
         group = data[data[case_id_col] == cid]
         total_time = ((group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60 if has_ts else 0)
-        # absolute start/end timestamps (seconds since epoch) for temporal splitting
+        # absolute start/end timestamps for temporal splitting
         if has_ts:
             start_ts = group[timestamp_col].min().timestamp()
             end_ts = group[timestamp_col].max().timestamp()

@@ -1,16 +1,13 @@
 import pandas as pd
 from utils.log_schema import load_log_schema
 
-def clean_log(
-    original_csv_path: str,
-    clean_csv_path: str,
-    log_name: str,
-):
+def clean_log(original_csv_path, clean_csv_path, log_name):
     """
-    Cleans a log CSV by:
-    - Filtering cases ending before a fixed time bound
-    - Removing the top 5% longest cases
+    Cleans a log CSV by (taken from Weytjens & De Weert):
     - Normalizing timestamps
+    - Removing duplicate events (= same case, activity, timestamp)
+    - Removing the top 5% longest cases by duration
+    - Filtering out cases that start before or end after a defined time window
     """
 
     # Load schema
@@ -19,34 +16,30 @@ def clean_log(
     timestamp_col = schema.timestamp
 
     if not timestamp_col:
-        raise ValueError("Timestamp column must be defined in the schema.")
+        raise ValueError("Timestamp column must be defined in schema")
 
-    # Load data
+    # Load and parse
     df = pd.read_csv(original_csv_path)
-
-    # Parse timestamps
     df[timestamp_col] = pd.to_datetime(df[timestamp_col], utc=True, errors="raise")
     df[timestamp_col] = df[timestamp_col].dt.floor("s")
 
-    # --- Compute case durations ---
-    durations = df.groupby(case_col)[timestamp_col].agg(["min", "max"])
-    durations["duration_days"] = (
-        (durations["max"] - durations["min"]).dt.total_seconds() / (24 * 60 * 60)
-    )
+    # Remove duplicate events
+    df = df.drop_duplicates().reset_index(drop=True)
 
     # Remove top 5% longest cases
+    durations = df.groupby(case_col)[timestamp_col].agg(["min", "max"])
+    durations["duration_days"] = ((durations["max"] - durations["min"]).dt.total_seconds() / 86400)
     cutoff = durations["duration_days"].quantile(0.95)
     good_cases = durations[durations["duration_days"] <= cutoff].index
     df = df[df[case_col].isin(good_cases)].reset_index(drop=True)
 
-    # --- Time window filtering ---
-    case_starts = df.groupby(case_col)[timestamp_col].min()
-    case_ends = df.groupby(case_col)[timestamp_col].max()
+    # Filter by time window 
+    start_bound = pd.Timestamp("1999-01-01", tz="UTC")  # TODO change for selected dataset, now arbitrary start
+    end_bound = pd.Timestamp("2012-03-01", tz="UTC")    # TODO change for selected dataset, now BPIC2012 end
+    case_times = df.groupby(case_col)[timestamp_col].agg(["min", "max"])
+    valid_cases = case_times[(case_times["min"] >= start_bound) & (case_times["max"] < end_bound)].index
+    df = df[df[case_col].isin(valid_cases)].reset_index(drop=True)
 
-    end_bound = pd.Timestamp("2012-03-01", tz="UTC")  # dataset-specific
-    valid_time_cases = case_starts[(case_ends < end_bound)].index
-    df = df[df[case_col].isin(valid_time_cases)].reset_index(drop=True)
-
-    # Format timestamps and save
+    # Save
     df[timestamp_col] = df[timestamp_col].dt.strftime("%Y-%m-%d %H:%M:%S%z")
     df.to_csv(clean_csv_path, index=False)
