@@ -76,6 +76,7 @@ def build_event_features(group, timestamp_col, activity_col):
         row = group.iloc[idx]
         event_features = {}
 
+        # If feature is selected in settings, add to event features
         if "timesincemidnight" in cols:
             event_features["timesincemidnight"] = row["timesincemidnight"]
         if "weekday" in cols:
@@ -119,26 +120,25 @@ def build_event_features(group, timestamp_col, activity_col):
         if "res_work_items_per_min" in cols:
             event_features["res_work_items_per_min"] = row["res_work_items_per_min"]
 
+        # Add activity frequencies
         if activity_values is not None:
             hist_activities = activity_values[:idx + 1]
             unique, counts = np.unique(hist_activities, return_counts=True)
             event_features["act_freq"] = dict(zip(unique, counts.tolist()))
         
+        # Add handoff frequencies
         if prev_resource_values is not None:
             hist_handoffs = prev_resource_values[:idx + 1]
             unique, counts = np.unique(hist_handoffs, return_counts=True)
             event_features["handoff_freq"] = dict(zip(unique, counts.tolist()))
 
-        seq.append([
-            row[activity_col],
-            row["timesincecasestart"] if "timesincecasestart" in cols else 0,
-            event_features
-        ])
+        # Add individual event and system state to activity sequence
+        seq.append([row[activity_col], row["timesincecasestart"] if "timesincecasestart" in cols else 0, event_features])
 
     return seq
 
 def safe_convert(obj):
-    """ Helper safe converter because typing is hard"""
+    """ Helper safe converter for different data types in logs"""
     if isinstance(obj, np.generic):
         return obj.item()
     if isinstance(obj, np.ndarray):
@@ -215,18 +215,13 @@ def preprocess_log(log_name: str, clean_version: bool):
         data['_row_id'] = range(len(data))
     
         res_exp_data = data.copy().sort_values(timestamp_col)
-        res_exp_features = res_exp_data.groupby(resource_col, group_keys=False).apply(
-            lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col)
-        )
-    
+        res_exp_features = res_exp_data.groupby(resource_col, group_keys=False).apply(lambda g: extract_resource_experience(g, case_id_col, activity_col, timestamp_col))
         data = data.merge(res_exp_features[["_row_id", "ent_act", "ent_case", "ent_handoff", "busyness"]], on="_row_id", how="left", suffixes=('', '_new'))
 
     if has_ts:
         print("Calculating workload features")
         case_windows = data.groupby(case_id_col)[timestamp_col].agg(start="min", end="max")
-        data["open_cases"] = data[timestamp_col].apply(
-            lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum()
-        )
+        data["open_cases"] = data[timestamp_col].apply(lambda t: ((case_windows["start"] <= t) & (case_windows["end"] > t)).sum())
 
     if has_res and has_act and has_ts:
         if '_row_id' not in data.columns:
@@ -243,6 +238,7 @@ def preprocess_log(log_name: str, clean_version: bool):
         
         res_stats_cols = {"res_work_items": [], "res_cases": [], "res_unique_tasks": [],"res_unique_handoffs": [], "res_ratio_workitems_global": [],"res_ratio_workitems_resource": [], "res_ratio_task_specific": [],"res_ratio_handoff_specific": [], "res_work_items_per_min": []}
         
+        # Compute system state values
         for i, row in sorted_data.iterrows():
             res = row[resource_col]
             cid = row[case_id_col]
@@ -275,12 +271,7 @@ def preprocess_log(log_name: str, clean_version: bool):
         for col_name, col_values in res_stats_cols.items():
             sorted_data[col_name] = col_values
         
-        data = data.merge(
-            sorted_data[["_row_id"] + list(res_stats_cols.keys())],
-            on="_row_id", 
-            how="left",
-            suffixes=('', '_new')
-        )
+        data = data.merge(sorted_data[["_row_id"] + list(res_stats_cols.keys())], on="_row_id", how="left", suffixes=('', '_new'))
 
     if '_row_id' in data.columns:
         data = data.drop('_row_id', axis=1)

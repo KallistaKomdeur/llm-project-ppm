@@ -31,7 +31,7 @@ Since logs are too large to store on GitHub, you'll have to upload yours yoursel
 
 ### 4. Prepare your environment.
 
-In the project root, add a .env file. This file is ignored (see .gitignore), so your keys won't be pushed to github. In here, define:
+In the project root, add a .env file. This file is ignored (see .gitignore), so your keys won't be pushed to github. In here, define (depending on the provider you want to use):
 
 - GEMINI_API_KEY
 - OPENAI_API_KEY
@@ -71,3 +71,26 @@ XGBoost was used as benchmark. To train and tune an XGBoost model on the data (b
 ```
 python -m train_xgboost <log_name>
 ```
+
+### Mode description
+
+There are currently five supported modes:
+
+1. Single: the activity sequence consists only of the activity and time since start, no inter-case event-level features
+2. Single split: the same as single, but the entire prompt text is spread over multiple queries
+3. Inter-case: the activity sequence consists of the activity, time since case start, and all inter-case features selected in the settings file
+4. Inter-case split: the same as inter-case, but the entire prompt text is spread over multiple queries
+5. Inter-case self-select: the same as inter-case, but a part was added where the LLM is instructed to first select which inter-case features it deems useful, and then instructed to only focus on those inter-case features
+6. Single reasoning: the same as single, but reasoning is requested and included in the LLM output
+
+### Settings
+
+Settings can be found in config/settings.yaml. You can change the following settings:
+
+1. n_runs: how many runs (= entire prompts) are done for an experiment
+2. examples_count: how many examples are included in the prompt text
+3. print_only: whether the experiment is actually run (= false), or an example prompt of those settings is printed (= true)
+4. clean_first: whether the raw log is used or the log is cleaned before preprocessing
+5. include_case_attributes: whether case attributes are included in the prompt
+6. include_log_info: whether a context description is included in the prompt
+7. included_inter_case: a list of all inter-case features available. The uncommented ones are the ones actually passed to the prompt
