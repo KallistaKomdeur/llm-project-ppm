@@ -1,19 +1,8 @@
-from typing import List
+SPLIT_MARKER = {"PART": "===PART:"}
 
-# ======================
-# CONSTANTS
-# ======================
-SPLIT_MARKER = {
-    "PART": "===PART:"
-}
-
-# ======================
-# MAIN FUNCTION
-# ======================
-def split_prompt_by_markers(prompt: str) -> List[str]:
+def split_prompt_by_markers(prompt):
     """
-    Splits a prompt into multiple parts based on explicit markers.
-    Returns a list of prompt strings, in order. If no markers are found, returns [prompt].
+    Splits a prompt into multiple parts based on markers (if present).
     """
 
     if SPLIT_MARKER["PART"] not in prompt:
