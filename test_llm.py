@@ -80,7 +80,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
     for run_idx in range(n_runs):
         session.reset()     # Clear cache!
         # Build prompt
-        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
+        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
 
         # Optional splitting
         prompt_parts = (
@@ -118,6 +118,7 @@ def test_llm(log_name: str, provider: str, model: str | None, configuration: str
             "actual_case_duration": true_total_time, 
 
             "prefix_length": prefix_length,
+            "true_total_length": true_total_length,
             "case_attributes_included": include_case_attr,
             "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
