@@ -145,7 +145,7 @@ def safe_convert(obj):
         return obj.tolist()
     return obj
 
-def preprocess_log(log_name: str, clean_version: bool):
+def preprocess_log(log_name, clean_version):
     # Get column names from schema
     schema = load_log_schema(log_name)
     case_id_col = schema.case_id

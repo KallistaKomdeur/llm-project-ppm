@@ -1,6 +1,6 @@
 import re
 
-def parse_llm_output(text: str) -> tuple[str | None, float | None]:
+def parse_llm_output(text):
     """ Extracts numerical answer from the LLM output"""
     answer = None
 

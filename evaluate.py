@@ -1,10 +1,8 @@
 import json
 import argparse
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from datetime import datetime, timezone
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score
 
 BASE_DIR = Path(__file__).resolve().parent
 

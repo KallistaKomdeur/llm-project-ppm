@@ -1,4 +1,4 @@
-import sys
+import argparse
 import json
 import pandas as pd
 from pathlib import Path
@@ -7,84 +7,63 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 from utils.log_schema import load_log_schema
 
-def run_xgb_pipeline(df: pd.DataFrame, case_col, activity_col, resource_col, timestamp_col, case_attrs):
-    """Aggregate features per case, train XGBoost with hyperparameter tuning, return metrics and model."""
-    # Aggregate features per case
-    case_features = []
 
+def run_xgb(df, case_col, activity_col, timestamp_col):
+    """
+    Train XGBoost using only the sequence of activities per case.
+    """
+    sequences = []
+    max_seq_len = 0
+
+    # Convert activities to ordered lists per case
     for case_id, group in df.groupby(case_col):
         group = group.sort_values(timestamp_col)
-        features = {}
+        seq = group[activity_col].tolist()
+        sequences.append({
+            "case_id": case_id,
+            "sequence": seq,
+            "duration": (group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60.0
+        })
+        max_seq_len = max(max_seq_len, len(seq))
 
-        # Target
-        duration = (group[timestamp_col].max() - group[timestamp_col].min()).total_seconds() / 60.0
-        features['total_duration'] = duration
+    # Build sequence features
+    feature_rows = []
+    valid_sequences = []
+    for case in sequences:
+        duration = case["duration"]
+        if pd.isna(duration) or duration in (float('inf'), float('-inf')) or duration < 0:
+            continue
+        padded = case["sequence"] + [None] * (max_seq_len - len(case["sequence"]))      # If not longest case, pad remaining activities with None
+        feature_rows.append(padded)
+        valid_sequences.append(case)
 
-        # Simple features
-        features['num_events'] = len(group)
-        features['num_unique_activities'] = group[activity_col].nunique()
-        if resource_col and resource_col in group.columns:
-            features['num_unique_resources'] = group[resource_col].nunique()
+    feature_df = pd.DataFrame(feature_rows)
+    feature_df = pd.get_dummies(feature_df, dummy_na=True, drop_first=True)             # One-hot encode activities per position
+    y = [c["duration"] for c in valid_sequences]                                        # Target = total duration
 
-        # Frequency encoding
-        activity_counts = group[activity_col].value_counts(normalize=True)
-        features['top_activity_ratio'] = activity_counts.iloc[0] if not activity_counts.empty else 0.0
+    X_train, X_test, y_train, y_test = train_test_split(feature_df, y, test_size=0.2, random_state=42)
 
-        # Case attributes
-        for attr in case_attrs:
-            if attr in group.columns:
-                features[attr] = group[attr].iloc[0]
+    # XGBoost model
+    xgb_model = XGBRegressor(objective='reg:squarederror', tree_method='hist', n_jobs=1,random_state=42)
 
-        case_features.append(features)
-
-    feature_df = pd.DataFrame(case_features)
-
-    # Split features and target
-    X = feature_df.drop(columns=['total_duration'])
-    y = feature_df['total_duration']
-
-    # One-hot encode categorical
-    cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
-    if cat_cols:
-        X = pd.get_dummies(X, columns=cat_cols, drop_first=True)
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    # Hyperparameter tuning
-    xgb_model = XGBRegressor(objective='reg:squarederror', tree_method='hist', n_jobs=-1, random_state=42)
-
+    # Hyperparameter search
     param_dist = {
         'n_estimators': [100, 300, 500],
         'max_depth': [3, 5, 7, 10],
         'learning_rate': [0.01, 0.05, 0.1, 0.2],
         'subsample': [0.6, 0.8, 1.0],
-        'colsample_bytree': [0.6, 0.8, 1.0],
-        'gamma': [0, 0.1, 0.3],
-        'reg_alpha': [0, 0.1, 0.5],
-        'reg_lambda': [1, 1.5, 2]
+        'colsample_bytree': [0.6, 0.8, 1.0]
     }
 
-    search = RandomizedSearchCV(
-        xgb_model,
-        param_distributions=param_dist,
-        n_iter=20,
-        scoring='neg_root_mean_squared_error',
-        cv=3,
-        verbose=1,
-        random_state=42
-    )
-
+    search = RandomizedSearchCV(xgb_model, param_distributions=param_dist, n_iter=20, scoring='neg_root_mean_squared_error', cv=5, verbose=0, random_state=42, n_jobs=-1)
     search.fit(X_train, y_train)
     best_model = search.best_estimator_
 
-    # Predictions & metrics
+    # Metrics
     y_pred = best_model.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-
     metrics = {
-        "mae": mae,
-        "r2": r2,
+        "mae": mean_absolute_error(y_test, y_pred),
+        "r2": r2_score(y_test, y_pred),
         "num_train_cases": len(y_train),
         "num_test_cases": len(y_test),
         "best_params": search.best_params_
@@ -92,15 +71,16 @@ def run_xgb_pipeline(df: pd.DataFrame, case_col, activity_col, resource_col, tim
 
     return best_model, metrics
 
-def train_xgb(log_name: str, logs_dir: str = "logs", results_dir: str = "results"):
-    """Train XGBoost on raw and cleaned logs (if available) and save metrics JSON."""
-    # Load schema
+
+def train_xgb(log_name, logs_dir = "logs", results_dir = "results"):
+    """
+    Train sequence-based XGBoost on raw and cleaned logs, save metrics as JSON.
+    """
+    # Load schema and get column names
     schema = load_log_schema(log_name)
     case_col = schema.case_id
     activity_col = schema.activity
-    resource_col = schema.resource
     timestamp_col = schema.timestamp
-    case_attrs = schema.case_attributes
 
     results = {}
 
@@ -108,39 +88,32 @@ def train_xgb(log_name: str, logs_dir: str = "logs", results_dir: str = "results
     raw_csv = Path(logs_dir) / log_name / f"{log_name}.csv"
     df_raw = pd.read_csv(raw_csv)
     df_raw[timestamp_col] = pd.to_datetime(df_raw[timestamp_col], utc=True)
-
     print(f"Processing raw log: {raw_csv}")
-    _, metrics_raw = run_xgb_pipeline(df_raw, case_col, activity_col, resource_col, timestamp_col, case_attrs)
+    _, metrics_raw = run_xgb(df_raw, case_col, activity_col, timestamp_col)
     results['raw'] = metrics_raw
 
-    # Clean log (if exists)
+    # Clean log if exists
     clean_csv = Path(logs_dir) / log_name / f"{log_name}_clean.csv"
     if clean_csv.exists():
         df_clean = pd.read_csv(clean_csv)
         df_clean[timestamp_col] = pd.to_datetime(df_clean[timestamp_col], utc=True)
         print(f"Processing cleaned log: {clean_csv}")
-        _, metrics_clean = run_xgb_pipeline(df_clean, case_col, activity_col, resource_col, timestamp_col, case_attrs)
+        _, metrics_clean = run_xgb(df_clean, case_col, activity_col, timestamp_col)
         results['clean'] = metrics_clean
     else:
-        print("No cleaned log found, skipping.")
+        print("No cleaned log found, training xgboost skipped")
 
-    # Save JSON metrics
+    # Save metrics to file
     output_dir = Path(results_dir) / log_name
     output_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = output_dir / f"xgboost_{log_name}.json"
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4)
 
-    print(f"Metrics saved to {metrics_path}")
-    print(json.dumps(results, indent=4))
-
     return results
 
-# Terminal entry point
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python train_xgboost.py <log_name>")
-        sys.exit(1)
-
-    log_name = sys.argv[1]
-    train_xgb(log_name)
+    parser = argparse.ArgumentParser(description="Train benchmark XGBoost model on log")
+    parser.add_argument("log_name", type=str)
+    args = parser.parse_args()
+    train_xgb(args.log_name)
