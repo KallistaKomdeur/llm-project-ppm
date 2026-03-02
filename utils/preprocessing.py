@@ -35,7 +35,6 @@ def extract_resource_experience(group, case_id_col, activity_col, timestamp_col)
     - Entropy of cases of resource
     - Entropy of handoffs
     - Busyness
-    
     """
     group = group.reset_index(drop=True)
     n = len(group)
@@ -62,6 +61,7 @@ def extract_resource_experience(group, case_id_col, activity_col, timestamp_col)
     return group
 
 def build_event_features(group, timestamp_col, activity_col):
+    """ Adds computed event features based on what could be computed."""
     group = group.sort_values(timestamp_col).reset_index(drop=True)
     cols = set(group.columns)
 
@@ -146,6 +146,7 @@ def safe_convert(obj):
     return obj
 
 def preprocess_log(log_name, clean_version):
+    """Main function to do all the inter-case and system state feature computations."""
     # Get column names from schema
     schema = load_log_schema(log_name)
     case_id_col = schema.case_id
@@ -306,7 +307,6 @@ def preprocess_log(log_name, clean_version):
             "end_ts": end_ts
         })
 
-    print(f"Writing to {output_file.name}")
     with open(output_file, "w", encoding="utf-8") as f:
         for case in output:
             f.write(json.dumps(case, default=safe_convert) + "\n")

@@ -6,6 +6,7 @@ from openai import OpenAI
 import anthropic
 
 def get_api_key(provider):
+    """Extracts the correct API key from the environment based on the selected provider."""
     load_dotenv()
     key_map = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
     if provider not in key_map:
@@ -33,6 +34,7 @@ class LLMSession:
         self._cache = None
 
     def send_query(self, provider, model_name, prompt):
+        """Handles calling of query functions per provider."""
         api_key = get_api_key(provider)
         if provider == "gemini":
             return self._send_gemini(model_name, prompt, api_key)
