@@ -60,11 +60,11 @@ def temporal_train_test_split_random_truncation(cases, train_ratio = 0.8, MIN_PR
         case_len = len(seq)
 
         # If the full case is shorter than the minimum prefix length, ignore it
-        if case_len < MIN_PREFIX_LENGTH:
+        if case_len < MIN_PREFIX_LENGTH + 1:
             continue
 
         # Select a random prefix length and truncate test case
-        prefix_len = random.randint(MIN_PREFIX_LENGTH, case_len)
+        prefix_len = random.randint(MIN_PREFIX_LENGTH, case_len - 1)
         truncated_seq = seq[:prefix_len]
 
         truncated_case = dict(c)
