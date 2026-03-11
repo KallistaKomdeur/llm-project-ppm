@@ -1,0 +1,10 @@
+log_name: hospital
+log_description: The process is an excerpt of the billing procedure of a hospital.
+columns:
+  case_id: case_id
+  activity: activity
+  resource: org:resource
+  timestamp: time:timestamp
+case_attributes:
+  age: the age of the patient
+  gender: the gender of the patient
