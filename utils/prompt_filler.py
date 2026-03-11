@@ -1,11 +1,9 @@
 import json
-import random
 from pathlib import Path
 
-from utils.data_split import temporal_train_test_split
-from utils.general_utils import load_cases
 from utils.load_config import load_config
 from utils.log_schema import load_log_schema
+from utils.generate_test_sets import generate_fixed_sets
 
 def format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys):
     """
@@ -42,7 +40,7 @@ def get_case_attributes(case, include_case_attr, case_attribute_keys):
 
     return {k: case[k] for k in case_attribute_keys if k in case}
 
-def fill_prompt(log_name, configuration, examples_count, clean_first):
+def fill_prompt(log_name, configuration, set_index, clean_first):
     """
     Fills the prompt template with values. 
     """
@@ -51,7 +49,23 @@ def fill_prompt(log_name, configuration, examples_count, clean_first):
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
     prompt_path = root / "prompts" / f"{configuration}.txt"
+
+    fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
+
+    if not fixed_sets_path.exists():
+        generate_fixed_sets(log_name, n_sets=100, examples_count=10, clean_first=False, seed=42)
+        fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
     
+    with open(fixed_sets_path, encoding="utf-8") as f:
+        all_sets = json.load(f)
+    
+    if set_index >= len(all_sets):
+        raise IndexError(f"set_index {set_index} out of range (only {len(all_sets)} sets available)")
+
+    current_set = all_sets[set_index]
+    example_cases = current_set["examples"]
+    test_case = current_set["test_case"]
+
     # Check which preprocessed file to use
     if clean_first:
         preprocessed_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
@@ -76,31 +90,22 @@ def fill_prompt(log_name, configuration, examples_count, clean_first):
     process_context = ""
     schema = load_log_schema(log_name) 
     case_attrs = schema.case_attributes
+    case_attr_keys = list(case_attrs) if case_attrs else []
 
     if include_log_info:
         case_attr_expl = "\n".join(f"- the key \"{k}\", which value is {v}" for k, v in (case_attrs or {}).items())
         process_context = schema.log_description or ""
 
-    # Load & split
-    cases = load_cases(preprocessed_path)
-    train_cases, test_cases = temporal_train_test_split(cases)
-
-    if len(train_cases) < examples_count:
-        raise ValueError("Not enough training cases for examples")
-
     # Sample and format random examples from training set
-    example_cases = random.sample(train_cases, examples_count)
     example_blocks = []
-    case_attr_keys = list(case_attrs) if case_attrs else []
-
-    for i, case in enumerate(example_cases, start=1):
+    
+    for case in example_cases:
         formatted = format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys)
         example_blocks.append(json.dumps(formatted, separators=(", ", ": ")))
 
     examples_str = "\n\n".join(example_blocks)
 
     # Sample prediction case from test set
-    test_case = random.choice(test_cases)
     prefix_length = len(test_case["ActTimeSeq"])
     true_total_time = test_case["true_total_time"]
     true_total_length = test_case["true_total_length"]

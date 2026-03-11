@@ -54,9 +54,9 @@ def get_results_path(log_name):
     next_run = max(run_nums, default=0) + 1                                                             # Find number for next run
     return results_dir / f"run_{next_run}.jsonl"
 
-def test_llm(log_name, provider, model, configuration, n_runs, print_only, examples_count):
+def test_llm(log_name, provider, model, configuration, n_runs, print_only):
     """
-    Runs LLM predictions and logs each query.
+    Runs LLM predictions over n_runs fixed pre-generated sets and logs each query.
     """
     clean_first = config.get("clean_first", False)
 
@@ -67,8 +67,9 @@ def test_llm(log_name, provider, model, configuration, n_runs, print_only, examp
     session = LLMSession()      # Create session for caching
 
     for run_idx in range(n_runs):
-        session.reset()     # Clear cache each individual run to prevent information flow!!!
-        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, examples_count=examples_count, clean_first = clean_first)
+        session.reset()         # Clear cache each individual run to prevent information flow!!!
+
+        prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, set_index=run_idx, clean_first=clean_first)
 
         # Optional splitting
         prompt_parts = (split_prompt_by_markers(prompt_text) if "split" in configuration else [prompt_text])
@@ -97,6 +98,7 @@ def test_llm(log_name, provider, model, configuration, n_runs, print_only, examp
             "model": model,
             "configuration": configuration,
             "log_name": log_name,
+            "set_index": run_idx,
             "llm_answer": answer,
             "actual_case_duration": true_total_time, 
 
@@ -129,6 +131,5 @@ if __name__ == "__main__":
         model=model,
         configuration=configuration,
         n_runs= config.get("n_runs", 1),
-        print_only= config.get("print_only", True),
-        examples_count=config.get("examples_count", 1)
+        print_only= config.get("print_only", True)
     )
