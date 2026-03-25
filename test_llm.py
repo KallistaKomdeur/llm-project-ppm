@@ -57,7 +57,7 @@ def test_llm(log_name, provider, model, configuration):
     Runs LLM predictions over n_runs fixed pre-generated sets and logs each query.
     """
     clean_first = config.get("clean_first", False)
-    n_runs= config.get("n_runs", 1),
+    n_runs= config.get("n_runs", 1)
     print_only= config.get("print_only", True)
 
     # Ensure log is preprocessed
