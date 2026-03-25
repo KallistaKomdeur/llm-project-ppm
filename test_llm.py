@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import timezone, datetime
 
 from utils.general_utils import get_input
 from utils.send_query import LLMSession
@@ -30,7 +30,7 @@ def ensure_preprocessed(log_name, clean_first):
             clean_log(original_csv_path, clean_csv_path, log_name)
 
         if not preprocessed_path.exists():
-            print(f"Preprocessed clean file missing. Running preprocessing for clean {log_name}.")
+            print(f"Preprocessed clean file missing, running preprocessing for clean {log_name}.")
             preprocess_log(log_name, clean_version = True)
 
     else:
@@ -38,10 +38,8 @@ def ensure_preprocessed(log_name, clean_first):
         preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
 
         if not preprocessed_path.exists():
-            print(f"Preprocessed file missing. Running preprocessing for {log_name}")
+            print(f"Preprocessed file missing, running preprocessing for {log_name}")
             preprocess_log(log_name, clean_version = False)
-
-    return preprocessed_path
 
 def get_results_path(log_name):
     """
@@ -54,25 +52,25 @@ def get_results_path(log_name):
     next_run = max(run_nums, default=0) + 1                                                             # Find number for next run
     return results_dir / f"run_{next_run}.jsonl"
 
-def test_llm(log_name, provider, model, configuration, n_runs, print_only):
+def test_llm(log_name, provider, model, configuration):
     """
     Runs LLM predictions over n_runs fixed pre-generated sets and logs each query.
     """
     clean_first = config.get("clean_first", False)
+    n_runs= config.get("n_runs", 1),
+    print_only= config.get("print_only", True)
 
     # Ensure log is preprocessed
-    preprocessed_path = ensure_preprocessed(log_name, clean_first)
+    ensure_preprocessed(log_name, clean_first)
     results_path = get_results_path(log_name)
 
     session = LLMSession()      # Create session for caching
+    skipped = []
 
     for run_idx in range(n_runs):
-        session.reset()         # Clear cache each individual run to prevent information flow!!!
-
+        session.reset()         # Clear cache to prevent information flow
         prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, set_index=run_idx, clean_first=clean_first)
-
-        # Optional splitting
-        prompt_parts = (split_prompt_by_markers(prompt_text) if "split" in configuration else [prompt_text])
+        prompt_parts = (split_prompt_by_markers(prompt_text) if "split" in configuration else [prompt_text])    # Optional splitting
 
         # If debugging, only print prompt
         if print_only:
@@ -81,15 +79,20 @@ def test_llm(log_name, provider, model, configuration, n_runs, print_only):
                 print(part)
             return
 
-        llm_outputs = []
+        llm_outputs = session.send_with_retry(session, provider, model, prompt_parts, run_idx)
 
-        for i, part in enumerate(prompt_parts, start=1):
-            print(f"Sending part {i}/{len(prompt_parts)}")
-            output = session.send_query(provider, model, part)
-            llm_outputs.append(output)
-        
-        final_output = llm_outputs[-1]                  # Get final output
-        answer = parse_llm_output(final_output)         # Parse response
+        if llm_outputs is None:
+            skipped.append(run_idx)
+            continue
+
+        final_output = llm_outputs[-1]
+
+        try:
+            answer = parse_llm_output(final_output)
+        except ValueError as e:
+            print(f"Run {run_idx + 1} parsing failed: {e}")
+            skipped.append(run_idx)
+            continue
 
         # Build log record for later analysis
         record = {
@@ -125,11 +128,4 @@ if __name__ == "__main__":
     log_name, provider, model, configuration = get_input()
     config = load_config()
 
-    test_llm(
-        log_name=log_name,
-        provider=provider,
-        model=model,
-        configuration=configuration,
-        n_runs= config.get("n_runs", 1),
-        print_only= config.get("print_only", True)
-    )
+    test_llm(log_name=log_name, provider=provider, model=model, configuration=configuration)
