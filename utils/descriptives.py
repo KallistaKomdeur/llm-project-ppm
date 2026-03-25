@@ -1,6 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from log_schema import load_log_schema
+import json
+from pathlib import Path
 
 def descriptives(log_name: str):
     schema = load_log_schema(log_name)
@@ -29,6 +31,13 @@ def descriptives(log_name: str):
     test_stats = get_stats(test_set)
 
     print(pd.DataFrame({"First 80%": train_stats, "Last 20%": test_stats}).to_string())
+
+    fixed_path = Path(f"logs/{log_name}/{log_name}_fixed_sets.json")
+    with open(fixed_path) as f:
+        sets = json.load(f)
+
+    prefix_lengths = [s["prefix_length"] for s in sets]
+    print(f"Mean prefix length: {sum(prefix_lengths) / len(prefix_lengths):.2f}")
 
     plt.figure(figsize=(14, 7))
     plt.plot(train_set['completion_time'], train_set['duration'], alpha=0.3, label='Train', linewidth=0.5)
