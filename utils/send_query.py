@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import anthropic
+import time
 
 def get_api_key(provider):
     """Extracts the correct API key from the environment based on the selected provider."""
@@ -22,6 +23,8 @@ class LLMSession:
         self._cache = None
         self._client = None
         self._model = None
+        self.MAX_RETRIES = 5
+        self.BASE_RETRY_DELAY = 30
 
     def reset(self):
         """Call this between prompts to clear history and delete the cache"""
@@ -44,6 +47,28 @@ class LLMSession:
             return self._send_anthropic(model_name, prompt, api_key)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
+    
+    def send_with_retry(self, session, provider, model, prompt_parts, run_idx):
+        """
+        Sends all prompt parts with exponential backoff retry on failure.
+        Returns list of outputs, or None if all attempts failed.
+        """
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                llm_outputs = []
+                for i, part in enumerate(prompt_parts, start=1):
+                    output = session.send_query(provider, model, part)
+                    llm_outputs.append(output)
+                return llm_outputs
+
+            except (RuntimeError, ValueError) as e:
+                if attempt < self.MAX_RETRIES:
+                    delay = self.BASE_RETRY_DELAY * (2 ** (attempt - 1))  # Keep increasing delay if continuous failure
+                    session.reset()
+                    time.sleep(delay)
+                else:
+                    print(f"Run {run_idx + 1} failed after {self.MAX_RETRIES} attempts, skipped")
+                    return None
 
     def _send_gemini(self, model_name, prompt, api_key):
         """ Send query to gemini, including possible caching"""
