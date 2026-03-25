@@ -5,6 +5,8 @@ from utils.load_config import load_config
 from utils.log_schema import load_log_schema
 from utils.generate_test_sets import generate_fixed_sets
 
+SEED = 42
+
 def format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys):
     """
     Formats one full case.
@@ -44,6 +46,14 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     """
     Fills the prompt template with values. 
     """
+    # Get configuration settings
+    config = load_config()
+    n_sets = config.get("n_sets", 2)
+    examples_count = config.get("examples_count", 2)
+    n_prefixes = config.get("n_prefixes", 2)
+    include_case_attr = config.get("include_case_attributes", False)
+    included_inter_case = config.get("included_inter_case", [])
+    include_log_info = config.get("include_log_info", False)
 
     # Get file locations
     root = Path(__file__).resolve().parents[1]
@@ -53,7 +63,7 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
 
     if not fixed_sets_path.exists():
-        generate_fixed_sets(log_name, n_sets=100, examples_count=10, clean_first=False, seed=42)
+        generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed=SEED)
         fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
     
     with open(fixed_sets_path, encoding="utf-8") as f:
@@ -78,12 +88,6 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
 
     if not prompt_path.exists():
         raise FileNotFoundError(prompt_path)
-
-    # Get configuration settings
-    config = load_config()
-    include_case_attr = config.get("include_case_attributes", False)
-    included_inter_case = config.get("included_inter_case", [])
-    include_log_info = config.get("include_log_info", False)
 
     # Optionally collect case attribute explanations and log description/context
     case_attr_expl = ""
