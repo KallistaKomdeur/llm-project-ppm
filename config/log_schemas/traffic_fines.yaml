@@ -1,0 +1,10 @@
+log_name: traffic_fines
+log_description: The process is an excerpt of a road traffic fines handling process.
+columns:
+  case_id: Case ID
+  activity: Activity
+  resource: Resource
+  timestamp: Complete Timestamp
+case_attributes:
+  vehicleClass: the type of vehicle affected
+  article: the invoked article on which the fine is based
