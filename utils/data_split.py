@@ -1,5 +1,3 @@
-import random
-
 def temporal_train_test_split(cases, train_ratio = 0.8):
     """
     Splits cases temporally assuming cases are already sorted by completion time (see paper)
@@ -40,39 +38,17 @@ def temporal_train_test_split(cases, train_ratio = 0.8):
 
     return train_cases, test_cases_trunc
 
-def temporal_train_test_split_random_truncation(cases, train_ratio = 0.8, MIN_PREFIX_LENGTH = 2):
+def temporal_train_test_split(cases, train_ratio = 0.8, MIN_PREFIX_LENGTH = 1):
     """
     Splits cases temporally assuming cases are already sorted by completion time (see paper)
     Train: first train_ratio of cases (= earliest completions).
-    Test: remaining 20% of cases, randomly truncated.
+    Test: remaining 20% of cases, untruncated.
     """
-
     if not cases:
         raise ValueError("Empty case list")
     
     # Assume cases are sorted by completion time
     n_train = max(1, int(len(cases) * train_ratio))
-    train_cases = cases[:n_train]
-
-    test_cases_trunc = []
-    for c in cases[n_train:]:
-        seq = c.get("ActTimeSeq", [])
-        case_len = len(seq)
-
-        # If the full case is shorter than the minimum prefix length, ignore it
-        if case_len < MIN_PREFIX_LENGTH + 1:
-            continue
-
-        # Select a random prefix length and truncate test case
-        prefix_len = random.randint(MIN_PREFIX_LENGTH, case_len - 1)
-        truncated_seq = seq[:prefix_len]
-
-        truncated_case = dict(c)
-        truncated_case["ActTimeSeq"] = truncated_seq
-        truncated_case["true_total_time"] = c.get("total_time")
-        truncated_case["total_time"] = "RUNNING"
-        truncated_case["true_total_length"] = case_len
-        test_cases_trunc.append(truncated_case)
     
-    return train_cases, test_cases_trunc
+    return cases[:n_train], cases[n_train:]
 
