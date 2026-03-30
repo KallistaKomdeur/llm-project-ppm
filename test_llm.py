@@ -59,6 +59,7 @@ def test_llm(log_name, provider, model, configuration):
     clean_first = config.get("clean_first", False)
     n_runs= config.get("n_runs", 1)
     print_only= config.get("print_only", True)
+    truncate_training_examples = config.get("truncate_training_examples", False)
 
     # Ensure log is preprocessed
     ensure_preprocessed(log_name, clean_first)
@@ -107,6 +108,7 @@ def test_llm(log_name, provider, model, configuration):
 
             "prefix_length": prefix_length,
             "true_total_length": true_total_length,
+            "truncate_training_examples": truncate_training_examples,
             "case_attributes_included": include_case_attr,
             "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
