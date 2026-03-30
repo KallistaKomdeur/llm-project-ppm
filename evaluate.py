@@ -2,21 +2,29 @@ import json
 import argparse
 import pandas as pd
 from pathlib import Path
+import numpy as np
 from sklearn.metrics import mean_absolute_error, r2_score
 
 BASE_DIR = Path(__file__).resolve().parent
 
+def bootstrap_mae_ci(y_true, y_pred, n_boot=1000, ci=95, seed=42):
+    """ Returns confidence interval for MAE (bootstrap resampling)"""
+    rng = np.random.default_rng(seed)
+    abs_errors = np.abs(np.array(y_true) - np.array(y_pred))
+    mae_std = float(np.std(abs_errors, ddof=1))
+
+    boot_means = [np.mean(rng.choice(abs_errors, size=len(abs_errors), replace=True)) for _ in range(n_boot)]
+    lo = (100 - ci) / 2
+    ci_low, ci_high = np.percentile(boot_means, [lo, 100 - lo])
+    return mae_std, float(ci_low), float(ci_high)
+
 def load_results(log_name):
-    """Load results across individual files/runs"""
+    """Load results across individual files"""
     results_dir = BASE_DIR / "results" / log_name
-    if not results_dir.exists():
-        print(f"Results directory not found")
-        return pd.DataFrame()
 
     all_records = []
     files = list(results_dir.glob("run_*.jsonl"))
     
-    # Aggregate results across files
     for file_path in files:
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -28,19 +36,8 @@ def load_results(log_name):
     return pd.DataFrame(all_records)
 
 def evaluate(log_name):
-    """ 
-    Evaluate all results for a log. MAE and R^2 grouped by:
-    - Provider (Gemini, Claude, etc.)
-    - Model
-    - Configuration (single/inter-case, split or not)
-    - Are case attributes and/or log info included?
-    - Was the log cleaned first
-    
-    """
+    """ Evaluate all results for a log (MAE and R^2)"""
     df = load_results(log_name)
-    if df.empty:
-        print(f"No results found for {log_name}.")
-        return
 
     # Convert to numeric and drop invalid rows
     df['llm_answer'] = pd.to_numeric(df['llm_answer'], errors='coerce')
@@ -48,7 +45,7 @@ def evaluate(log_name):
     df = df.dropna(subset=['llm_answer', 'actual_case_duration'])
 
     # Grouping keys
-    group_cols = ['provider', 'model','configuration', 'case_attributes_included', 'log_info_included', 'clean_first']
+    group_cols = ['provider', 'model','configuration', 'case_attributes_included', 'log_info_included', 'clean_first', 'truncate_training_examples']
     grouped = df.groupby(group_cols)
 
     summary_results = []
@@ -58,29 +55,31 @@ def evaluate(log_name):
         y_true = group['actual_case_duration']
         y_pred = group['llm_answer']
         
-        # Create group identifier dictionary
-        group_meta = dict(zip(group_cols, names))
-        
-        # Calculate metrics
+        group_params = dict(zip(group_cols, names))
+        mae_std, ci_low, ci_high = bootstrap_mae_ci(y_true.values, y_pred.values)
+
         metrics = {
-            "parameters": group_meta,
+            "parameters": group_params,
             "n_samples": int(len(group)),
             "actual_avg": float(y_true.mean()),
             "predicted_avg": float(y_pred.mean()),
             "mae": float(mean_absolute_error(y_true, y_pred)),
-            "r2": float(r2_score(y_true, y_pred)) if len(group) > 1 else None
+            "mae_std": mae_std,              
+            "mae_ci_low": ci_low,               
+            "mae_ci_high": ci_high,              
+            "r2": float(r2_score(y_true, y_pred)),
         }
         summary_results.append(metrics)
 
     final_output = {"log_name": log_name, "evaluation_groups": summary_results}
 
-    # Save to the results directory
+    # Save to the results folder
     output_path = BASE_DIR / "results" / log_name / "evaluation_summary.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(final_output, f, indent=4)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Evaluate LLM performance and output results as file")
-    parser.add_argument("log_name", type=str, help="The folder name within results/")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("log_name", type=str)
     args = parser.parse_args()
     evaluate(args.log_name)
