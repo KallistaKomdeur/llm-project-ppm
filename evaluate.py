@@ -45,7 +45,7 @@ def evaluate(log_name):
     df = df.dropna(subset=['llm_answer', 'actual_case_duration'])
 
     # Grouping keys
-    group_cols = ['provider', 'model','configuration', 'case_attributes_included', 'log_info_included', 'clean_first', 'truncate_training_examples']
+    group_cols = ['provider', 'model','configuration', 'case_attributes_included', 'log_info_included', 'clean_first', 'truncate_training_examples', 'selection_mode']
     grouped = df.groupby(group_cols)
 
     summary_results = []
