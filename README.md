@@ -4,7 +4,7 @@
 
 ### 1. Make sure Python is installed
 
-This project requires Python 3.9+. You can check your version by running the following in the terminal:
+This project requires a Python version between 3.9 and 3.11 (I use 3.10). You can check your version by running the following in the terminal:
 
 ```bash
 python --version
@@ -33,7 +33,7 @@ Since logs are too large to store on GitHub, you'll have to upload yours yoursel
 
 In the project root, add a .env file. This file is ignored (see .gitignore), so your keys won't be pushed to github. In here, define (depending on the provider you want to use):
 
-- GEMINI_API_KEY
+- GEMINI_API_KEY_X (where X is replaced by numbers, so 0, 1, etc. )
 - OPENAI_API_KEY
 - ANTHROPIC_API_KEY
 
@@ -61,7 +61,7 @@ If you want to only see the prompt and not the result, change in "config/setting
 To evaluate LLM results for a particular log, configuration, or provider, run the following in the terminal:
 
 ```
-python -m evaluate <log_name>
+python -m evaluate <log_name> <selection_mode>
 ```
 
 ### Benchmark evaluation
@@ -69,7 +69,7 @@ python -m evaluate <log_name>
 XGBoost was used as benchmark. To train and tune an XGBoost model on the data (both raw and cleaned), run the following in the terminal:
 
 ```
-python -m train_xgboost <log_name>
+python -m train_xgboost <log_name> <selection_mode>
 ```
 
 ## Useful information
