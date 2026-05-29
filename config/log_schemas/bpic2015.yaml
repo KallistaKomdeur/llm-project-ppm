@@ -1,0 +1,9 @@
+log_name: bpic2015
+log_description: The considered process is an anonymized process for a Dutch municipality.
+columns:
+  case_id: Case ID
+  activity: Activity
+  resource: Resource
+  timestamp: Complete Timestamp
+case_attributes:
+  parts: the permit group a case is part of
