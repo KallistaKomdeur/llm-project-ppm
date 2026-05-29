@@ -10,6 +10,9 @@ from utils.llm_parsing import parse_llm_output
 from utils.prompt_splitter import split_prompt_by_markers
 from utils.load_config import load_config
 from utils.clean_log import clean_log
+from utils.generate_test_sets import generate_fixed_sets
+
+SEED = 42
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -60,15 +63,30 @@ def test_llm(log_name, provider, model, configuration):
     n_runs= config.get("n_runs", 1)
     print_only= config.get("print_only", True)
     truncate_training_examples = config.get("truncate_training_examples", False)
+    selection_mode = config.get("selection_mode", "random")
+    n_sets = config.get("n_sets", 1)
+    examples_count = config.get("examples_count", 10)
+    n_prefixes = config.get("n_prefixes", 1)
 
     # Ensure log is preprocessed
     ensure_preprocessed(log_name, clean_first)
     results_path = get_results_path(log_name)
 
+    # Ensure fixed sets exist
+    log_dir = BASE_DIR / "logs" / log_name
+    fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
+
+    if not fixed_sets_path.exists():
+        generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed=SEED)
+        fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
+
+    with open(fixed_sets_path, "r", encoding="utf-8") as f:
+        fixed_combinations = json.load(f)
+
     session = LLMSession()      # Create session for caching
     skipped = []
 
-    for run_idx in range(n_runs):
+    for run_idx in range(len(fixed_combinations)):
         session.reset()         # Clear cache to prevent information flow
         prompt_text, true_total_time, prefix_length, include_case_attr, include_log_info, inter_case_attr, true_total_length = fill_prompt(log_name=log_name, configuration=configuration, set_index=run_idx, clean_first=clean_first)
         prompt_parts = (split_prompt_by_markers(prompt_text) if "split" in configuration else [prompt_text])    # Optional splitting
@@ -113,6 +131,7 @@ def test_llm(log_name, provider, model, configuration):
             "log_info_included": include_log_info,
             "included_inter-case_attributes": inter_case_attr,
             "clean_first": clean_first,
+            "selection_mode": selection_mode,
 
             "prompt_parts": prompt_parts,
             "llm_raw_output": llm_outputs
@@ -122,7 +141,7 @@ def test_llm(log_name, provider, model, configuration):
         with open(results_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        print(f"Logged run {run_idx + 1}/{n_runs}")
+        print(f"Logged run {run_idx + 1}/{len(fixed_combinations)}")
 
     return results_path
 
