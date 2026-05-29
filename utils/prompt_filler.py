@@ -48,23 +48,24 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     """
     # Get configuration settings
     config = load_config()
-    n_sets = config.get("n_sets", 2)
+    n_sets = config.get("n_sets", 2)       
     examples_count = config.get("examples_count", 2)
     n_prefixes = config.get("n_prefixes", 2)
     include_case_attr = config.get("include_case_attributes", False)
     included_inter_case = config.get("included_inter_case", [])
     include_log_info = config.get("include_log_info", False)
+    selection_mode = config.get("selection_mode", "random")
 
     # Get file locations
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
     prompt_path = root / "prompts" / f"{configuration}.txt"
 
-    fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
+    fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
 
     if not fixed_sets_path.exists():
         generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed=SEED)
-        fixed_sets_path = log_dir / f"{log_name}_fixed_sets.json"
+        fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
     
     with open(fixed_sets_path, encoding="utf-8") as f:
         all_sets = json.load(f)
