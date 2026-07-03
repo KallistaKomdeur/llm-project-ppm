@@ -4,19 +4,33 @@ from collections import defaultdict
 from copy import deepcopy
 
 def _edit_distance(seq_a, seq_b):
-    """Levenshtein distance between two activity sequences (control-flow distance)."""
+    """Damerau-Levenshtein distance (OSA) between two activity sequences. 
+    Insertion, deletion, substitution, and transposition each cost 1, see paper."""
     m, n = len(seq_a), len(seq_b)
-    dp = list(range(n + 1))
-    for i in range(1, m + 1):
-        prev = dp[:]
-        dp[0] = i
-        for j in range(1, n + 1):
-            if seq_a[i - 1] == seq_b[j - 1]:
-                dp[j] = prev[j - 1]
-            else:
-                dp[j] = 1 + min(prev[j], dp[j - 1], prev[j - 1])
-    return dp[n]
+    two_back = list(range(n + 1))   # row i-2
+    one_back = list(range(n + 1))   # row i-1
+    current = [0] * (n + 1)         # row i 
 
+    for i in range(1, m + 1):
+        current[0] = i
+        for j in range(1, n + 1):
+            cost = 0 if seq_a[i - 1] == seq_b[j - 1] else 1
+            current[j] = min(
+                one_back[j] + 1,        # deletion
+                current[j - 1] + 1,     # insertion
+                one_back[j - 1] + cost, # substitution
+            )
+            if (i > 1 and j > 1 and seq_a[i - 1] == seq_b[j - 2] and seq_a[i - 2] == seq_b[j - 1]):
+                current[j] = min(current[j], two_back[j - 2] + 1)  # transposition
+        two_back, one_back, current = one_back, current, two_back
+
+    return one_back[n]
+
+def _normalized_edit_distance(seq_a, seq_b):
+    """Raw DL distance divided by the length of the longer of the two sequences."""
+    dist = _edit_distance(seq_a, seq_b)
+    denom = max(len(seq_a), len(seq_b), 1)
+    return dist / denom
 
 def _extract_prefix_activities(case, prefix_len):
     seq = case.get("ActTimeSeq", [])
@@ -47,7 +61,7 @@ def _select_test_cases_randomly(test_cases, n_sets, seed):
     return result
 
 def _build_train_variants(train_cases, prefix_len):
-    """Group training cases by their prefix control-flow variant, so the edit distance to the test prefix is computed once per variant."""
+    """Group training cases by their prefix control-flow variant, so the distance to the test prefix is computed once per variant."""
     variants = defaultdict(list)
     for case in train_cases:
         if len(case.get("ActTimeSeq", [])) < prefix_len:
@@ -56,13 +70,12 @@ def _build_train_variants(train_cases, prefix_len):
     return variants
 
 def _retrieve_similar_train_cases(truncated_test, prefix_len, train_cases, examples_count):
-    """Pick the training cases whose prefix variant has the smallest Levenshtein
-    distance to the test prefix, searching the full training set. Ties (either within
-    a variant or across equidistant variants) are broken randomly."""
-    
+    """Pick the training cases whose prefix variant has the smallest normalized DL distance to the test prefix, searching the 
+    full training set, ties are broken randomly."""
+
     test_activities = _extract_prefix_activities(truncated_test, prefix_len)
     variants = _build_train_variants(train_cases, prefix_len)
-    scored_variants = sorted(((_edit_distance(test_activities, variant), variant) for variant in variants), key=lambda x: x[0])
+    scored_variants = sorted(((_normalized_edit_distance(test_activities, variant), variant) for variant in variants), key=lambda x: x[0])
 
     selected = []
     i = 0
@@ -85,9 +98,8 @@ def _retrieve_similar_train_cases(truncated_test, prefix_len, train_cases, examp
 
 def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed):
     """Select (examples, test_case, prefix_length) triples where the training examples
-    are the training cases whose control-flow prefix (Levenshtein distance) is most
-    similar to the test prefix."""
-    
+    are the training cases whose control flow prefix is most similar to the test prefix, using normalized Damerau-Levenshtein control-flow distance"""
+
     print(f"Sampling {n_sets} test cases uniformly")
     best_tests = _select_test_cases_randomly(test_cases, n_sets, seed)
     random.seed(seed + 1)
