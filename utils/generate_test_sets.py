@@ -57,21 +57,11 @@ def generate_fixed_sets_random(n_sets, examples_count, n_prefixes, seed, train_c
 def generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed):
     """
     - random: random sampling of test cases and training examples.
-    - representative: training examples scored against all train_cases
     - similar_prefix: training examples have the closest prefix to the test case prefix
     """
     config = load_config()
     truncate_train = config.get("truncate_training_examples", False)
-    # "selection_mode" with values "random" or "representative" or "similar_prefix".
-    raw_mode = config.get("selection_mode", config.get("representative_selection", "random"))
-    if raw_mode is True:
-        selection_mode = "representative"
-    elif raw_mode is False:
-        selection_mode = "random"
-    else:
-        selection_mode = str(raw_mode)
-
-    n_candidates = config.get("n_candidates", 200)
+    selection_mode = config.get("selection_mode", "random")
 
     root = Path(__file__).resolve().parents[1]
     log_dir = root / "logs" / log_name
@@ -85,13 +75,12 @@ def generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_firs
     train_cases, test_cases = temporal_train_test_split(all_cases)
 
     if selection_mode == "similar_prefix":
-        random_test_selection = config.get("random_test_selection", True)
-        print(f"Generating fixed sets, mode=similar_prefix, n_candidates={n_candidates}, random_test_selection={random_test_selection}")
-        sets = generate_similar_prefix_sets(log_name=log_name, all_cases=all_cases, train_cases=train_cases, test_cases=test_cases, n_sets=n_sets, examples_count=examples_count, n_candidates=n_candidates, truncate_train=truncate_train, seed=seed, random_test_selection=random_test_selection)
+        print(f"Generating fixed sets (similar_prefix)")
+        sets = generate_similar_prefix_sets(train_cases=train_cases, test_cases=test_cases, n_sets=n_sets, examples_count=examples_count, truncate_train=truncate_train, seed=seed)
     else:
         if selection_mode != "random":
-            print(f"Generating fixed sets, unknown selection_mode={selection_mode!r}, falling back to random")
-        print(f"Generating fixed sets, mode=random")
+            print(f"Generating fixed sets, unknown selection_mode, falling back to random")
+        print(f"Generating fixed sets (random)")
         sets = generate_fixed_sets_random(n_sets=n_sets, examples_count=examples_count, n_prefixes=n_prefixes, seed=seed, train_cases=train_cases, test_cases=test_cases, truncate_train=truncate_train)
 
     output_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
