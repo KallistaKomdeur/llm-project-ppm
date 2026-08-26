@@ -57,16 +57,14 @@ def get_results_path(log_name):
 
 def test_llm(log_name, provider, model, configuration):
     """
-    Runs LLM predictions over n_runs fixed pre-generated sets and logs each query.
+    Runs LLM predictions over all entries in the fixed pre-generated sets and logs each query.
     """
     clean_first = config.get("clean_first", False)
-    n_runs= config.get("n_runs", 1)
     print_only= config.get("print_only", True)
     truncate_training_examples = config.get("truncate_training_examples", False)
     selection_mode = config.get("selection_mode", "random")
     n_sets = config.get("n_sets", 1)
     examples_count = config.get("examples_count", 10)
-    n_prefixes = config.get("n_prefixes", 1)
 
     # Ensure log is preprocessed
     ensure_preprocessed(log_name, clean_first)
@@ -77,7 +75,7 @@ def test_llm(log_name, provider, model, configuration):
     fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
 
     if not fixed_sets_path.exists():
-        generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed=SEED)
+        generate_fixed_sets(log_name, n_sets, examples_count, clean_first=clean_first, seed=SEED)
         fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
 
     with open(fixed_sets_path, "r", encoding="utf-8") as f:

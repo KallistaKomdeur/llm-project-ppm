@@ -50,7 +50,6 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     config = load_config()
     n_sets = config.get("n_sets", 2)       
     examples_count = config.get("examples_count", 2)
-    n_prefixes = config.get("n_prefixes", 2)
     include_case_attr = config.get("include_case_attributes", False)
     included_inter_case = config.get("included_inter_case", [])
     include_log_info = config.get("include_log_info", False)
@@ -64,7 +63,7 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
 
     if not fixed_sets_path.exists():
-        generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed=SEED)
+        generate_fixed_sets(log_name, n_sets, examples_count, clean_first, seed=SEED)
         fixed_sets_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
     
     with open(fixed_sets_path, encoding="utf-8") as f:
