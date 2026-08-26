@@ -4,9 +4,9 @@ from pathlib import Path
 from utils.general_utils import load_cases
 from utils.data_split import temporal_train_test_split
 from utils.load_config import load_config
-from utils.similar_prefix_sets import generate_similar_prefix_sets
+from utils.similar_prefix_sets import generate_similar_prefix_sets, generate_similar_prefix_temporal_sets
 
-def generate_fixed_sets_random(n_sets, examples_count, n_prefixes, seed, train_cases, test_cases, truncate_train):
+def generate_fixed_sets_random(n_sets, examples_count, seed, train_cases, test_cases, truncate_train):
     """ Randomly enerates n_sets fixed (examples, test_case) """
     random.seed(seed)
 
@@ -23,8 +23,7 @@ def generate_fixed_sets_random(n_sets, examples_count, n_prefixes, seed, train_c
         if not possible_lengths:
             continue
 
-        num_to_sample = min(len(possible_lengths), n_prefixes)
-        prefix_lengths = sorted(random.sample(possible_lengths, num_to_sample))
+        prefix_lengths = random.sample(possible_lengths)
         base_examples = random.sample(train_cases, examples_count)
 
         for prefix_len in prefix_lengths:
@@ -54,10 +53,14 @@ def generate_fixed_sets_random(n_sets, examples_count, n_prefixes, seed, train_c
     return sets
 
 
-def generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_first, seed):
+def generate_fixed_sets(log_name, n_sets, examples_count, clean_first, seed):
     """
     - random: random sampling of test cases and training examples.
-    - similar_prefix: training examples have the closest prefix to the test case prefix
+    - similar_prefix: training examples have the closest prefix to the test case prefix, by control-flow
+      (normalized Damerau-Levenshtein) distance alone.
+    - similar_prefix_temporal: training examples are, per control-flow variant, the case whose prefix cycle
+      time is closest to the test case's, scored by 0.25 * normalized control-flow distance
+      + 0.75 * normalized prefix-cycle-time distance.
     """
     config = load_config()
     truncate_train = config.get("truncate_training_examples", False)
@@ -74,17 +77,28 @@ def generate_fixed_sets(log_name, n_sets, examples_count, n_prefixes, clean_firs
     all_cases = load_cases(preprocessed_path)
     train_cases, test_cases = temporal_train_test_split(all_cases)
 
+    timing_summary = None
+
     if selection_mode == "similar_prefix":
         print(f"Generating fixed sets (similar_prefix)")
-        sets = generate_similar_prefix_sets(train_cases=train_cases, test_cases=test_cases, n_sets=n_sets, examples_count=examples_count, truncate_train=truncate_train, seed=seed)
+        sets, timing_summary = generate_similar_prefix_sets(train_cases=train_cases, test_cases=test_cases, n_sets=n_sets, examples_count=examples_count, truncate_train=truncate_train, seed=seed)
+    elif selection_mode == "similar_prefix_temporal":
+        print(f"Generating fixed sets (similar_prefix_temporal)")
+        sets, timing_summary = generate_similar_prefix_temporal_sets(train_cases=train_cases, test_cases=test_cases, n_sets=n_sets, examples_count=examples_count, truncate_train=truncate_train, seed=seed)
     else:
         if selection_mode != "random":
             print(f"Generating fixed sets, unknown selection_mode, falling back to random")
         print(f"Generating fixed sets (random)")
-        sets = generate_fixed_sets_random(n_sets=n_sets, examples_count=examples_count, n_prefixes=n_prefixes, seed=seed, train_cases=train_cases, test_cases=test_cases, truncate_train=truncate_train)
+        sets = generate_fixed_sets_random(n_sets=n_sets, examples_count=examples_count, seed=seed, train_cases=train_cases, test_cases=test_cases, truncate_train=truncate_train)
 
     output_path = log_dir / f"{log_name}_{selection_mode}_fixed_sets.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(sets, f, ensure_ascii=False, indent=2)
+
+    if timing_summary is not None:
+        timing_path = log_dir / f"{log_name}_{selection_mode}_timings.json"
+        with open(timing_path, "w", encoding="utf-8") as f:
+            json.dump(timing_summary, f, ensure_ascii=False, indent=2)
+        print(f"Saved selection timings to {timing_path}")
 
     return output_path

@@ -3,6 +3,12 @@ import time
 from collections import defaultdict
 from copy import deepcopy
 
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
 def _edit_distance(seq_a, seq_b):
     """Damerau-Levenshtein distance (OSA) between two activity sequences. 
     Insertion, deletion, substitution, and transposition each cost 1, see paper."""
@@ -60,6 +66,10 @@ def _select_test_cases_randomly(test_cases, n_sets, seed):
 
     return result
 
+# ---------------------------------------------------------------------------
+# similar_prefix (control-flow only, normalized DL distance)
+# ---------------------------------------------------------------------------
+
 def _build_train_variants(train_cases, prefix_len):
     """Group training cases by their prefix control-flow variant, so the distance to the test prefix is computed once per variant."""
     variants = defaultdict(list)
@@ -96,15 +106,95 @@ def _retrieve_similar_train_cases(truncated_test, prefix_len, train_cases, examp
 
     return [deepcopy(c) for c in selected]
 
-def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed):
-    """Select (examples, test_case, prefix_length) triples where the training examples
-    are the training cases whose control flow prefix is most similar to the test prefix, using normalized Damerau-Levenshtein control-flow distance"""
+# ---------------------------------------------------------------------------
+# similar_prefix_temporal (0.25 * normalized control-flow distance
+#                          + 0.75 * normalized prefix-cycle-time distance)
+#
+# The original version of this mode called log_distance_measures' CLFD/REDD once per training case, which
+# was too slow. This version stays within the same variant-grouping structure as the plain similar_prefix
+# mode (one score per unique activity prefix, not per case) and swaps REDD for a cheap proxy: instead of
+# picking a same-variant case at random, we pick the one whose prefix cycle time (elapsed time from the
+# first to the last event of the prefix) is closest to the test sample's. That keeps the candidate set at
+# one representative per variant, so scoring is arithmetic only - no log-distance library calls.
+# ---------------------------------------------------------------------------
 
+def _prefix_cycle_time_seconds(case, prefix_len):
+    """Elapsed time, in seconds, between the first and last event of the case's first prefix_len events."""
+    seq = case.get("ActTimeSeq", [])[:prefix_len]
+    if len(seq) < 2:
+        return 0.0
+
+    timestamps = []
+    for entry in seq:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            raise ValueError(
+                "similar_prefix_temporal requires ActTimeSeq entries of the form [activity, timestamp]; "
+                f"got {entry!r}"
+            )
+        timestamps.append(pd.to_datetime(entry[1], utc=True))
+
+    return (max(timestamps) - min(timestamps)).total_seconds()
+
+def _normalized_cycle_time_distance(cycle_time_a, cycle_time_b):
+    """Absolute difference between two prefix cycle times, normalized by the larger of the two so the
+    result is on the same [0, 1]-ish scale as the normalized edit distance."""
+    denom = max(abs(cycle_time_a), abs(cycle_time_b), 1.0)
+    return abs(cycle_time_a - cycle_time_b) / denom
+
+def _select_variant_representative(cases, prefix_len, test_cycle_time):
+    """Among training cases sharing a control-flow variant, pick the one whose prefix cycle time is
+    closest to the test sample's, instead of picking randomly."""
+    return min(cases, key=lambda c: abs(_prefix_cycle_time_seconds(c, prefix_len) - test_cycle_time))
+
+def _retrieve_similar_train_cases_temporal(truncated_test, prefix_len, train_cases, examples_count):
+    """Pick representative training cases by 0.75 * normalized control-flow distance
+    + 0.25 * normalized prefix-cycle-time distance, one score per control-flow variant, ties broken
+    randomly."""
+
+    test_activities = _extract_prefix_activities(truncated_test, prefix_len)
+    test_cycle_time = _prefix_cycle_time_seconds(truncated_test, prefix_len)
+
+    variants = _build_train_variants(train_cases, prefix_len)
+
+    scored = []
+    for variant, cases in variants.items():
+        representative = _select_variant_representative(cases, prefix_len, test_cycle_time)
+        rep_cycle_time = _prefix_cycle_time_seconds(representative, prefix_len)
+
+        cf_dist = _normalized_edit_distance(test_activities, variant)
+        ct_dist = _normalized_cycle_time_distance(test_cycle_time, rep_cycle_time)
+        scored.append((0.75 * cf_dist + 0.25 * ct_dist, representative))
+
+    scored.sort(key=lambda x: x[0])
+
+    selected = []
+    i = 0
+    while i < len(scored) and len(selected) < examples_count:
+        dist = scored[i][0]
+
+        tied_cases = []
+        while i < len(scored) and scored[i][0] == dist:
+            tied_cases.append(scored[i][1])
+            i += 1
+
+        random.shuffle(tied_cases)
+        remaining = examples_count - len(selected)
+        selected.extend(tied_cases[:remaining])
+
+    return [deepcopy(c) for c in selected]
+
+# ---------------------------------------------------------------------------
+# Shared driver: samples test prefixes, retrieves examples per prefix via the
+# given retrieve_fn, and records per-test-case + total timing.
+# ---------------------------------------------------------------------------
+
+def _generate_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed, retrieve_fn, mode_label):
     print(f"Sampling {n_sets} test cases uniformly")
     best_tests = _select_test_cases_randomly(test_cases, n_sets, seed)
     random.seed(seed + 1)
 
     result_sets = []
+    per_test_timings = []
     total_start = time.perf_counter()
 
     for test_record in best_tests:
@@ -113,9 +203,15 @@ def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count
         truncated_test = test_record["test_case"]
 
         start = time.perf_counter()
-        similar_examples = _retrieve_similar_train_cases(truncated_test, prefix_len, train_cases, examples_count)
+        similar_examples = retrieve_fn(truncated_test, prefix_len, train_cases, examples_count)
         elapsed = time.perf_counter() - start
-        print(f"Selected {len(similar_examples)} examples for prefix_len={prefix_len} in {elapsed:.4f}s")
+        print(f"[{mode_label}] Selected {len(similar_examples)} examples for prefix_len={prefix_len} in {elapsed:.4f}s")
+
+        per_test_timings.append({
+            "prefix_length": prefix_len,
+            "total_case_length": case_len,
+            "selection_time_seconds": elapsed,
+        })
 
         if truncate_train:
             for ex in similar_examples:
@@ -130,5 +226,36 @@ def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count
             "selection_time_seconds": elapsed,
         })
 
-    print(f"Total selection time: {time.perf_counter() - total_start:.4f}s")
-    return result_sets
+    total_elapsed = time.perf_counter() - total_start
+    print(f"[{mode_label}] Total selection time: {total_elapsed:.4f}s")
+
+    timing_summary = {
+        "mode": mode_label,
+        "n_sets": len(result_sets),
+        "total_selection_time_seconds": total_elapsed,
+        "average_selection_time_seconds": (total_elapsed / len(result_sets)) if result_sets else 0.0,
+        "per_test_case": per_test_timings,
+    }
+
+    return result_sets, timing_summary
+
+def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed):
+    """Select (examples, test_case, prefix_length) triples where the training examples are the training
+    cases whose control-flow prefix is most similar to the test prefix, using normalized Damerau-Levenshtein
+    control-flow distance. Returns (result_sets, timing_summary)."""
+    return _generate_sets(
+        train_cases, test_cases, n_sets, examples_count, truncate_train, seed,
+        retrieve_fn=_retrieve_similar_train_cases,
+        mode_label="similar_prefix",
+    )
+
+def generate_similar_prefix_temporal_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed):
+    """Select (examples, test_case, prefix_length) triples where the training examples are the training
+    cases whose control-flow variant representative is most similar to the test prefix under
+    0.25 * normalized control-flow distance + 0.75 * normalized prefix-cycle-time distance.
+    Returns (result_sets, timing_summary)."""
+    return _generate_sets(
+        train_cases, test_cases, n_sets, examples_count, truncate_train, seed,
+        retrieve_fn=_retrieve_similar_train_cases_temporal,
+        mode_label="similar_prefix_temporal",
+    )
