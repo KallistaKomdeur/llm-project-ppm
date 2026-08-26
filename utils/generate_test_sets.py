@@ -59,8 +59,8 @@ def generate_fixed_sets(log_name, n_sets, examples_count, clean_first, seed):
     - similar_prefix: training examples have the closest prefix to the test case prefix, by control-flow
       (normalized Damerau-Levenshtein) distance alone.
     - similar_prefix_temporal: training examples are, per control-flow variant, the case whose prefix cycle
-      time is closest to the test case's, scored by 0.25 * normalized control-flow distance
-      + 0.75 * normalized prefix-cycle-time distance.
+      time is closest to the test case's, scored by 0.75 * normalized control-flow distance
+      + 0.25 * normalized prefix-cycle-time distance.
     """
     config = load_config()
     truncate_train = config.get("truncate_training_examples", False)

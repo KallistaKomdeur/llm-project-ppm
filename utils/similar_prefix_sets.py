@@ -107,15 +107,8 @@ def _retrieve_similar_train_cases(truncated_test, prefix_len, train_cases, examp
     return [deepcopy(c) for c in selected]
 
 # ---------------------------------------------------------------------------
-# similar_prefix_temporal (0.25 * normalized control-flow distance
-#                          + 0.75 * normalized prefix-cycle-time distance)
-#
-# The original version of this mode called log_distance_measures' CLFD/REDD once per training case, which
-# was too slow. This version stays within the same variant-grouping structure as the plain similar_prefix
-# mode (one score per unique activity prefix, not per case) and swaps REDD for a cheap proxy: instead of
-# picking a same-variant case at random, we pick the one whose prefix cycle time (elapsed time from the
-# first to the last event of the prefix) is closest to the test sample's. That keeps the candidate set at
-# one representative per variant, so scoring is arithmetic only - no log-distance library calls.
+# similar_prefix_temporal (0.27 * normalized control-flow distance
+#                          + 0.25 * normalized prefix-cycle-time distance)
 # ---------------------------------------------------------------------------
 
 def _prefix_cycle_time_seconds(case, prefix_len):
@@ -184,7 +177,7 @@ def _retrieve_similar_train_cases_temporal(truncated_test, prefix_len, train_cas
     return [deepcopy(c) for c in selected]
 
 # ---------------------------------------------------------------------------
-# Shared driver: samples test prefixes, retrieves examples per prefix via the
+# Samples test prefixes, retrieves examples per prefix via the
 # given retrieve_fn, and records per-test-case + total timing.
 # ---------------------------------------------------------------------------
 
@@ -252,7 +245,7 @@ def generate_similar_prefix_sets(train_cases, test_cases, n_sets, examples_count
 def generate_similar_prefix_temporal_sets(train_cases, test_cases, n_sets, examples_count, truncate_train, seed):
     """Select (examples, test_case, prefix_length) triples where the training examples are the training
     cases whose control-flow variant representative is most similar to the test prefix under
-    0.25 * normalized control-flow distance + 0.75 * normalized prefix-cycle-time distance.
+    0.75 * normalized control-flow distance + 0.25 * normalized prefix-cycle-time distance.
     Returns (result_sets, timing_summary)."""
     return _generate_sets(
         train_cases, test_cases, n_sets, examples_count, truncate_train, seed,
