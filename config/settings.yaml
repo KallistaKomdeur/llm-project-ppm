@@ -23,7 +23,7 @@ included_inter_case:
   - res_ratio_handoff_specific
   - res_work_items_per_min
 n_sets: 1000000000000000000000000
-print_only: true
+print_only: false
 random_test_selection: true
 selection_mode: similar_prefix_temporal
 truncate_training_examples: false
