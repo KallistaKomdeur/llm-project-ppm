@@ -7,8 +7,8 @@ settings_path = Path("config/settings.yaml")
 commands = [
     "python -m test_llm gen_drifted gemini single_ref",
     "python -m test_llm bpic2012 gemini single_ref",
-    "python -m test_llm bpic2020_prepaid_travel_costs gemini single_ref",
     "python -m test_llm bpic2020_domestic_declarations gemini single_ref",
+    "python -m test_llm bpic2020_prepaid_travel_costs gemini single_ref",
     "python -m test_llm bpic2020_international_declarations gemini single_ref",
     "python -m test_llm bpic2020_request_for_payment gemini single_ref",
     "python -m test_llm bpic2020_travel_permit_data gemini single_ref",
