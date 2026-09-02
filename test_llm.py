@@ -67,7 +67,7 @@ def test_llm(log_name, provider, model, configuration):
     examples_count = config.get("examples_count", 10)
 
     # Ensure log is preprocessed
-    ensure_preprocessed(log_name, clean_first)
+    # ensure_preprocessed(log_name, clean_first)    TODO PUT BACK LATER
     results_path = get_results_path(log_name)
 
     # Ensure fixed sets exist
