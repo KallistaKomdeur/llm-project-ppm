@@ -76,16 +76,7 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     example_cases = current_set["examples"]
     test_case = current_set["test_case"]
 
-    # Check which preprocessed file to use
-    if clean_first:
-        preprocessed_path = log_dir / f"{log_name}_clean_preprocessed.jsonl"
-    else:
-        preprocessed_path = log_dir / f"{log_name}_preprocessed.jsonl"
-
     # Some error handling for debugging
-    if not preprocessed_path.exists():
-        raise FileNotFoundError(preprocessed_path)
-
     if not prompt_path.exists():
         raise FileNotFoundError(prompt_path)
 
@@ -105,7 +96,7 @@ def fill_prompt(log_name, configuration, set_index, clean_first):
     
     for case in example_cases:
         formatted = format_case(case, configuration, include_case_attr, included_inter_case, case_attr_keys)
-        example_blocks.append(json.dumps(formatted, separators=(", ", ": ")))
+        example_blocks.append(json.dumps(formatted))
 
     examples_str = "\n\n".join(example_blocks)
 
