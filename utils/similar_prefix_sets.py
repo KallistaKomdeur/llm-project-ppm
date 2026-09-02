@@ -147,8 +147,7 @@ def _retrieve_similar_train_cases_temporal(truncated_test, prefix_len, train_cas
             case_cycle_time = _prefix_cycle_time_seconds(case, prefix_len)
 
             ct_dist = _normalized_cycle_time_distance(test_cycle_time,case_cycle_time)
-            #TODO CHANGE SCORE HERE
-            score = (0.9 * cf_dist + 0.1 * ct_dist)
+            score = (0.5 * cf_dist + 0.5 * ct_dist)
             scored.append((score, case))
 
     # Lowest combined distance = most similar.
